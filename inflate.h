@@ -7,6 +7,7 @@ https://datatracker.ietf.org/doc/html/rfc1951#section-7
 
 
 #define INFLATE_END_OF_COMPRESSED   -1
+#define INFLATE_INVALID_BLOCK_TYPE  -2
 
 
 #include <stddef.h>

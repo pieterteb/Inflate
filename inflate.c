@@ -31,10 +31,19 @@ extern int inflate(const unsigned char* restrict compressed, const size_t compre
 
     /* Process blocks. */
     int final_block = 0;
-    
+    int block_type = 0;
     do {
         final_block = consumeBit(&inflate_stream);
-        
+        block_type = consumeNumeric(&inflate_stream, 2);
+        switch (block_type) {
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+                return INFLATE_INVALID_BLOCK_TYPE;
+            default:
+                break;
+        }
     } while (!final_block);
 }
 
