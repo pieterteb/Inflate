@@ -1,3 +1,7 @@
+/*
+https://datatracker.ietf.org/doc/html/rfc1951#section-7
+*/
+
 #ifndef INFLATE_H
 #define INFLATE_H
 
@@ -9,7 +13,7 @@
 
 
 
-extern int inflate(const char* restrict compressed, const size_t compressed_length, char** const restrict uncompressed, size_t* const restrict uncompressed_length);
+extern int inflate(const unsigned char* restrict compressed, const size_t compressed_length, unsigned char** const restrict uncompressed, size_t* const restrict uncompressed_length);
 
 
 
