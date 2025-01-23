@@ -1,80 +1,91 @@
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "inflate.h"
 
 
 
-typedef struct InflateStream {
-    char*           compressed;
-    size_t          compressed_length;
-
-    char*           uncompressed;
-    size_t          uncompressed_length;
-
-    unsigned char   bit_position;
-    size_t          byte_position;
-} InflateStream;
-
-
-static int consumeBit(InflateStream* const inflate_stream);
-
-static int consumeNumeric(InflateStream* const inflate_stream, const size_t bit_length);
-
-
-extern int inflate(const unsigned char* restrict compressed, const size_t compressed_length, unsigned char** const restrict uncompressed, size_t* const restrict uncompressed_length) {
+extern int inflate(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length) {
+    if (!uncompressed) {
+        return INFLATE_NO_OUTPUT;
+    }
     if (!compressed) {
         *uncompressed_length = 0;
-        return 0;
+        return INFLATE_SUCCESS;
     }
 
-    InflateStream inflate_stream = (InflateStream){ compressed, compressed_length, *uncompressed, 0, 0b00000001, 0 };
+    size_t uncompressed_size = compressed_length * sizeof(**uncompressed) / 2;
+    *uncompressed = realloc(*uncompressed, uncompressed_size);
+    if (!*uncompressed) {
+        *uncompressed_length = 0;
+        return INFLATE_NO_MEMORY;
+    }
+
+    uint32_t bit_buffer = 0;
+    size_t bit_buffer_count = 0;
+#ifdef INFLATE_CAREFUL
+    size_t bytes_left = compressed_length;
+#endif /* INFLATE_CAREFUL */
+    unsigned char* current_byte = compressed;
 
     /* Process blocks. */
-    int final_block = 0;
-    int block_type = 0;
+    uint32_t block_header = 0;
     do {
-        final_block = consumeBit(&inflate_stream);
-        block_type = consumeNumeric(&inflate_stream, 2);
-        switch (block_type) {
-            case 0:
+        NEED_BITS(3);
+        block_header = GET_BITS(3);
+        DROP_BITS(3);
+        switch (block_header & 3) {
+            case 0: // Non-compressed block.
+                NEXT_BYTE();
+#ifdef INFLATE_CAREFUL
+                NEED_BITS(32);
+                if (bit_buffer & 0x00ff != ~(bit_buffer >> 16)) {
+                    return INFLATE_WRONG_BLOCK_LENGTH;
+                }
+                uint16_t block_length = (uint16_t)GET_BITS(16);
+                DROP_BITS(32);
+#else
+                NEED_BITS(16);
+                uint16_t block_length = (uint16_t)bit_buffer;
+                DROP_BITS(16);
+                /* Skip NLEN. */
+                current_byte += 2;
+#endif /* INFLATE_CAREFUL */
+                
+                if (block_length + *uncompressed_length > uncompressed_size) {
+                    uncompressed_size *= 2;
+                    *uncompressed = realloc(*uncompressed, uncompressed_size * sizeof(**uncompressed));
+                    if (!*uncompressed) {
+                        return INFLATE_NO_MEMORY;
+                    }
+                }
+
+#ifdef INFLATE_CAREFUL
+                if (bytes_left < block_length) {
+                    return INFLATE_COMPRESSED_INCOMPLETE;
+                }
+#endif /* INFLATE_CAREFUL */
+
+                memcpy(&(*uncompressed)[*uncompressed_length], current_byte, block_length);
+                current_byte += block_length;
+                *uncompressed_length += block_length;
+#ifdef INFLATE_CAREFUL
+                bytes_left -= block_length;
+#endif /* INFLATE_CAREFUL */
+                
+                continue;
             case 1:
+                break;
             case 2:
+                break;
             case 3:
                 return INFLATE_INVALID_BLOCK_TYPE;
             default:
                 break;
         }
-    } while (!final_block);
-}
+    } while (!(block_header & 4)); // Final block bit.
 
-static int consumeBit(InflateStream* const inflate_stream) {
-    if (inflate_stream->byte_position == inflate_stream->compressed_length) {
-        return INFLATE_END_OF_COMPRESSED;
-    }
-
-    int bit = inflate_stream->compressed[inflate_stream->byte_position] & inflate_stream->bit_position;
-
-    if (inflate_stream->bit_position == 0b10000000) {
-        ++inflate_stream->byte_position;
-        inflate_stream->bit_position = 0b00000001;
-    } else {
-        inflate_stream->bit_position <<= 1;
-    }
-
-    return bit;
-}
-
-static int consumeNumeric(InflateStream* const inflate_stream, const size_t bit_length) {
-    int numeric = 0;
-
-    int bit = 0;
-    for (size_t i = 0; i <  bit_length; ++i) {
-        bit = consumeBit(inflate_stream);
-        if (bit == INFLATE_END_OF_COMPRESSED) {
-            return INFLATE_END_OF_COMPRESSED;
-        }
-        numeric |= bit << i;
-    }
-
-    return numeric;
+    return INFLATE_SUCCESS;
 }
