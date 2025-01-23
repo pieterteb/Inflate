@@ -7,6 +7,45 @@
 
 
 
+#ifdef INFLATE_CAREFUL
+#   define NEED_BITS(num_bits) \
+        do { \
+            while (bit_buffer_count < (num_bits)) { \
+                if (!bytes_left) { \
+                    return INFLATE_COMPRESSED_INCOMPLETE; \
+                } \
+                --bytes_left; \
+                bit_buffer |= (uint32_t)*current_byte << bit_buffer_count; \
+                ++current_byte; \
+                bit_buffer_count += 8; \
+            } \
+        } while (0)
+#else
+#   define NEED_BITS(num_bits) \
+        do { \
+            while (bit_buffer_count < (num_bits)) { \
+                bit_buffer |= (uint32_t)*current_byte << bit_buffer_count; \
+                ++current_byte; \
+                bit_buffer_count += 8; \
+            } \
+        } while (0)
+#endif /* INFLATE_CAREFUL */
+
+#define GET_BITS(num_bits) (bit_buffer & ((1U << num_bits) - 1))
+
+#define DROP_BITS(num_bits) \
+    do { \
+        bit_buffer >>= num_bits; \
+        bit_buffer_count -= num_bits; \
+    } while (0)
+
+#define NEXT_BYTE() \
+    do { \
+        bit_buffer >>= (8 - (bit_buffer_count & 7)) & 7; \
+        bit_buffer_count -= (8 - (bit_buffer_count & 7)) & 7; \
+    } while (0)
+
+
 extern int inflate(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length) {
     if (!uncompressed) {
         return INFLATE_NO_OUTPUT;
@@ -39,20 +78,14 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
         switch (block_header & 3) {
             case 0: // Non-compressed block.
                 NEXT_BYTE();
-#ifdef INFLATE_CAREFUL
                 NEED_BITS(32);
+#ifdef INFLATE_CAREFUL
                 if (bit_buffer & 0x00ff != ~(bit_buffer >> 16)) {
                     return INFLATE_WRONG_BLOCK_LENGTH;
                 }
+#endif /* INFLATE_CAREFUL */
                 uint16_t block_length = (uint16_t)GET_BITS(16);
                 DROP_BITS(32);
-#else
-                NEED_BITS(16);
-                uint16_t block_length = (uint16_t)bit_buffer;
-                DROP_BITS(16);
-                /* Skip NLEN. */
-                current_byte += 2;
-#endif /* INFLATE_CAREFUL */
                 
                 if (block_length + *uncompressed_length > uncompressed_size) {
                     uncompressed_size *= 2;
@@ -63,7 +96,12 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
                 }
 
 #ifdef INFLATE_CAREFUL
+                /* If not enough bytes remain, copy over as many as possible and return error code. */
                 if (bytes_left < block_length) {
+                    memcpy(&(*uncompressed)[*uncompressed_length], current_byte, bytes_left);
+                    *uncompressed_length += bytes_left;
+                    *uncompressed = realloc(*uncompressed, *uncompressed_length * sizeof(**uncompressed)); // There is no reason this reallocation can fail.
+
                     return INFLATE_COMPRESSED_INCOMPLETE;
                 }
 #endif /* INFLATE_CAREFUL */
