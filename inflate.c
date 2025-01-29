@@ -100,7 +100,7 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
                 if (bytes_left < block_length) {
                     memcpy(&(*uncompressed)[*uncompressed_length], current_byte, bytes_left);
                     *uncompressed_length += bytes_left;
-                    *uncompressed = realloc(*uncompressed, *uncompressed_length * sizeof(**uncompressed)); // There is no reason this reallocation can fail.
+                    *uncompressed = realloc(*uncompressed, *uncompressed_length * sizeof(**uncompressed)); // There is no reason this reallocation would fail.
 
                     return INFLATE_COMPRESSED_INCOMPLETE;
                 }
