@@ -1,5 +1,5 @@
 /*
-https://datatracker.ietf.org/doc/html/rfc1951#section-7
+https://datatracker.ietf.org/doc/html/rfc1951#section-3
 */
 #ifndef INFLATE_H
 #define INFLATE_H
@@ -14,6 +14,10 @@ If not defined, inflate() is optimised with the assumption that input is error-f
 If defined, invalid deflate will be handled by returning an error code, corresponding to the fault encountered first.
 */
 #define INFLATE_CAREFUL
+
+
+#define INFLATE_MAX_CODE_LENGTH 15U
+#define INFLATE_UNUSED_CODE     (uint16_t)-1
 
 
 /* Inflate success and error codes. */

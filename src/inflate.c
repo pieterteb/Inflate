@@ -66,7 +66,6 @@
 #   endif /* INFLATE_CAREFUL */
 #endif /* INFLATE_64_BIT */
 
-
 #define GET_BITS(num_bits) (bit_buffer & ((1U << num_bits) - 1))
 
 #define DROP_BITS(num_bits) \
@@ -86,6 +85,10 @@
         bit_buffer >>= (8 - (bit_buffer_count & 7)) & 7; \
         bit_buffer_count -= (8 - (bit_buffer_count & 7)) & 7; \
     } while (0)
+
+
+#define INFLATE_MAX_FIXED_CODE  511U
+#define INFLATE_END_OF_BLOCK    256U
 
 
 extern int inflate(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length) {
@@ -156,9 +159,25 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
 #endif /* INFLATE_CAREFUL */
                 
                 break;
-            case 1:
+            case 1: // Fixed Huffman encoding.
+                unsigned int fixed_codes[INFLATE_MAX_FIXED_CODE];
+                memset(fixed_codes, -1, INFLATE_MAX_FIXED_CODE);
+                size_t i = 0;
+                for (; i <= 143; ++i) {
+                    fixed_codes[i + 48] = (unsigned int)i;
+                }
+                for (; i <= 255; ++i) {
+                    fixed_codes[i + 400] = (unsigned int)i;
+                }
+                for (; i <= 279; ++i) {
+                    fixed_codes[i] = (unsigned int)i;
+                }
+                for (; i <= 287; ++i) {
+                    fixed_codes[i + 192] = (unsigned int)i;
+                }
+
                 break;
-            case 2:
+            case 2: // Dynamic Huffman encoding.
                 break;
             case 3:
                 return INFLATE_INVALID_BLOCK_TYPE;
