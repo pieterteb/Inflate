@@ -18,7 +18,7 @@ If defined, invalid deflate will be handled by returning an error code, correspo
 
 /* Inflate success and error codes. */
 enum {
-    INFLATE_SUCCESS,
+    INFLATE_SUCCESS = 0,
     INFLATE_NO_OUTPUT,
     INFLATE_NO_MEMORY,
     INFLATE_COMPRESSED_INCOMPLETE,
