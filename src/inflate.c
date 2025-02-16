@@ -76,6 +76,12 @@
         bit_buffer_count -= num_bits; \
     } while (0)
 
+#define EMPTY_BUFFER() \
+    do { \
+        bit_buffer = 0; \
+        bit_buffer_count = 0; \
+    } while (0)
+
 #define NEXT_BYTE() \
     do { \
         bit_buffer >>= (8 - (bit_buffer_count & 7)) & 7; \
@@ -122,12 +128,7 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
                 }
 #endif /* INFLATE_CAREFUL */
                 uint16_t block_length = (uint16_t)GET_BITS(16);
-#ifdef INFLATE_64_BIT
-                DROP_BITS(32);
-#else
-                DROP_BITS(16);
-                DROP_BITS(16);
-#endif /* INFLATE_64_BIT */
+                EMPTY_BUFFER();
                 
                 if (block_length + *uncompressed_length > uncompressed_size) {
                     uncompressed_size *= 2;
