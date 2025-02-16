@@ -96,9 +96,9 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
                 }
 
 #ifdef INFLATE_CAREFUL
-                /* If not enough bytes remain, copy over as many as possible and return error code. */
+                /* If not enough bytes remain, copy as many as possible and return error code. */
                 if (bytes_left < block_length) {
-                    memcpy(&(*uncompressed)[*uncompressed_length], current_byte, bytes_left);
+                    memcpy(*uncompressed + *uncompressed_length, current_byte, bytes_left);
                     *uncompressed_length += bytes_left;
                     *uncompressed = realloc(*uncompressed, *uncompressed_length * sizeof(**uncompressed)); // There is no reason this reallocation would fail.
 
@@ -106,7 +106,7 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
                 }
 #endif /* INFLATE_CAREFUL */
 
-                memcpy(&(*uncompressed)[*uncompressed_length], current_byte, block_length);
+                memcpy(*uncompressed + *uncompressed_length, current_byte, block_length);
                 current_byte += block_length;
                 *uncompressed_length += block_length;
 #ifdef INFLATE_CAREFUL

@@ -11,7 +11,7 @@ https://datatracker.ietf.org/doc/html/rfc1951#section-7
 
 /* 
 If not defined, inflate() is optimised with the assumption that input is error-free deflate. 
-If defined, invalid deflate will be handled by returning an error or warning code, corresponding to the fault encountered first.
+If defined, invalid deflate will be handled by returning an error code, corresponding to the fault encountered first.
 */
 #define INFLATE_CAREFUL
 
@@ -27,7 +27,7 @@ enum {
 };
 
 
-extern int inflate(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length);
+extern int inflate(const unsigned char* compressed, const size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length);
 
 
 
