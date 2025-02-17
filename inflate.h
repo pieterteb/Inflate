@@ -17,7 +17,7 @@ If defined, invalid deflate will be handled by returning an error code, correspo
 
 
 #define INFLATE_MAX_CODE_LENGTH 15U
-#define INFLATE_UNUSED_CODE     (uint16_t)-1
+#define INFLATE_UNUSED_CODE     (unsigned int)-1
 
 
 /* Inflate success and error codes. */
