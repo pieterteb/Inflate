@@ -1,5 +1,3 @@
-#include <limits.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,23 +7,35 @@
 
 
 #define INFLATE_END_OF_BLOCK    256U
-#define INFLATE_CODE_COUNT      289U
+#define INFLATE_CODE_COUNT      288U
 
 
-static unsigned int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size);
+/**
+ * @brief Processes an uncompressed block.
+ * 
+ * @param bit_reader Contains compressed data.
+ * @param uncompressed Contains uncompressed data.
+ * @param uncompressed_length Length in bytes of uncompressed data.
+ * @param uncompressed_size Size of bytes of uncommpressed memory block.
+ * @return int 
+ */
+static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size);
 
 
 extern int inflate(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length) {
+    *uncompressed_length = 0;
+
     if (!uncompressed) {
         return INFLATE_NO_OUTPUT;
     }
-
-    *uncompressed_length = 0;
     if (!compressed) {
         return INFLATE_SUCCESS;
     }
 
-    size_t uncompressed_size = compressed_length * sizeof(**uncompressed) / 2;
+    size_t uncompressed_size = compressed_length * sizeof(**uncompressed) / 4;
+    if (!uncompressed_size) {
+        uncompressed_size = 1;
+    }
     *uncompressed = malloc(uncompressed_size);
     if (!*uncompressed) {
         return INFLATE_NO_MEMORY;
@@ -92,11 +102,11 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
     return INFLATE_SUCCESS;
 }
 
-static unsigned int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {
-    nextByte(&bit_reader);
-    fillBuffer(&bit_reader);
-    unsigned int block_length = getBits(&bit_reader, 16);
-    unsigned int Nblock_length = getBits(&bit_reader, 16);
+static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {
+    nextByte(bit_reader);
+    fillBuffer(bit_reader);
+    unsigned int block_length = getBits(bit_reader, 16);
+    unsigned int Nblock_length = getBits(bit_reader, 16);
 #ifdef INFLATE_CAREFUL
     if (block_length == (unsigned int)-1 || Nblock_length == (unsigned int)-1) {
         return INFLATE_COMPRESSED_INCOMPLETE;
@@ -105,7 +115,7 @@ static unsigned int uncompressedBlock(BitReader* bit_reader, unsigned char** unc
     }
 #endif /* INFLATE_CAREFUL */
     
-    if (block_length + *uncompressed_length > *uncompressed_size) {
+    while (block_length + *uncompressed_length > *uncompressed_size) {
         *uncompressed_size *= 2;
         *uncompressed = realloc(*uncompressed, *uncompressed_size * sizeof(**uncompressed));
         if (!*uncompressed) {
@@ -114,11 +124,15 @@ static unsigned int uncompressedBlock(BitReader* bit_reader, unsigned char** unc
     }
 
 #ifdef INFLATE_CAREFUL
-    /* If not enough bytes remain, copy as many as possible and return error code. */
+    /* If not enough bytes remain, copy as many as possible. */
     if (bit_reader->current_byte + block_length >= bit_reader->compressed_end) {
-        memcpy(*uncompressed + *uncompressed_length, bit_reader->current_byte, bit_reader->compressed_end - bit_reader->current_byte);
-        *uncompressed_length += bit_reader->compressed_end - bit_reader->current_byte;
-        *uncompressed = realloc(*uncompressed, *uncompressed_length * sizeof(**uncompressed)); // There is no reason this reallocation would fail.
+        size_t bytes_left = bit_reader->compressed_end - bit_reader->current_byte;
+        memcpy(*uncompressed + *uncompressed_length, bit_reader->current_byte, bytes_left);
+        bit_reader->current_byte = bit_reader->compressed_end;
+        *uncompressed_length += bytes_left;
+
+        *uncompressed_size = *uncompressed_length;
+        *uncompressed = realloc(*uncompressed, *uncompressed_size * sizeof(**uncompressed)); // There is no reason this reallocation would fail.
 
         return INFLATE_COMPRESSED_INCOMPLETE;
     }
@@ -127,7 +141,6 @@ static unsigned int uncompressedBlock(BitReader* bit_reader, unsigned char** unc
     memcpy(*uncompressed + *uncompressed_length, bit_reader->current_byte, block_length);
     bit_reader->current_byte += block_length;
     *uncompressed_length += block_length;
-#ifdef INFLATE_CAREFUL
-    bit_reader->current_byte += block_length;
-#endif /* INFLATE_CAREFUL */
+
+    return INFLATE_SUCCESS;
 }
