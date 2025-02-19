@@ -243,6 +243,8 @@ static int handleLz77(unsigned int value, BitReader* bit_reader, unsigned int* c
     value = getValue(bit_reader, distance_table, 5);
     if (value == (unsigned int)-1) {
         return INFLATE_COMPRESSED_INCOMPLETE;
+    } else if (value > 29) {
+        return INFLATE_UNUSED_VALUE;
     }
     temp = getBits(bit_reader, distance_extra_bits[value]);
     if (temp == (unsigned int)-1) {
