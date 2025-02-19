@@ -46,7 +46,7 @@ void fillBuffer(BitReader* bit_reader);
 unsigned int getBits(BitReader* bit_reader, size_t count);
 
 /**
- * @brief Get @a count bits from @a bit_reader if available. Else returns -1.
+ * @brief Read @a count bits from @a bit_reader if available. Else returns -1.
  * 
  * @param bit_reader Contains compressed data.
  * @param count Number of bits. At most 16 bits can be requested.
