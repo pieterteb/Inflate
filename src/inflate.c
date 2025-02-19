@@ -81,17 +81,9 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
         switch (block_type) {
             case 0: // Non-compressed block.
                 result = uncompressedBlock(&bit_reader, uncompressed, uncompressed_length, &uncompressed_size);
-                if (result) {
-                    return result;
-                }
-                
                 break;
             case 1: // Fixed Huffman encoding.
                 result = fixedEncodingBlock(&bit_reader, uncompressed, uncompressed_length, &uncompressed_size);
-                if (result) {
-                    return result;
-                }
-
                 break;
             case 2: // Dynamic Huffman encoding.
                 break;
@@ -99,6 +91,10 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
                 return INFLATE_INVALID_BLOCK_TYPE;
             default:
                 break;
+        }
+
+        if (result) {
+            return result;
         }
     } while (!final_block);
 
