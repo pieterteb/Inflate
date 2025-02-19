@@ -56,9 +56,11 @@ unsigned int* huffmanTable(size_t* code_lengths, size_t code_count) {
 
 unsigned int getValue(BitReader* bit_reader, unsigned int* table, size_t max_code_length) {
     unsigned int bit = peekBits(bit_reader, 1);
+#ifdef INFLATE_CAREFUL
     if (bit == (unsigned int)-1) {
         return (unsigned int)-1;
     }
+#endif /* INFLATE_CAREFUL */
 
     unsigned int code = 0;
     for (size_t i = 0; i < max_code_length;) {
@@ -69,9 +71,11 @@ unsigned int getValue(BitReader* bit_reader, unsigned int* table, size_t max_cod
         if (bit == (unsigned int)-1) {
             code <<= max_code_length - i;
 
+#ifdef INFLATE_CAREFUL
             if (table[code] >> 16 > i) {
                 return (unsigned int)-1;
             }
+#endif /* INFLATE_CAREFUL */
 
             break;
         }
