@@ -205,6 +205,8 @@ static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompresse
         } else if (value > INFLATE_END_OF_BLOCK) {
             int result = handleLz77(value, bit_reader, code_table, distance_table, uncompressed, uncompressed_length, uncompressed_size);
             if (result) {
+                free(code_table);
+                free(distance_table);
                 return result;
             }
         }
@@ -240,14 +242,10 @@ static int handleLz77(unsigned int value, BitReader* bit_reader, unsigned int* c
 
     value = getValue(bit_reader, distance_table, 5);
     if (value == (unsigned int)-1) {
-        free(code_table);
-        free(distance_table);
         return INFLATE_COMPRESSED_INCOMPLETE;
     }
     temp = getBits(bit_reader, distance_extra_bits[value]);
     if (temp == (unsigned int)-1) {
-        free(code_table);
-        free(distance_table);
         return INFLATE_COMPRESSED_INCOMPLETE;
     }
     unsigned int distance = distance_default[value] + temp;
