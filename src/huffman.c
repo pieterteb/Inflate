@@ -68,6 +68,12 @@ unsigned int getValue(BitReader* bit_reader, unsigned int* table, size_t max_cod
         bit = peekBits(bit_reader, 1);
         if (bit == (unsigned int)-1) {
             code <<= max_code_length - i;
+
+            if (table[code] >> 16 > i) {
+                return (unsigned int)-1;
+            }
+
+            break;
         }
     }
     getBits(bit_reader, table[code] >> 16);

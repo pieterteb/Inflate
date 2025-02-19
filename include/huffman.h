@@ -15,7 +15,7 @@
 unsigned int* huffmanTable(size_t* code_lengths, size_t code_count);
 
 /**
- * @brief Consumes and returns the value corresponding to the next code in @a bit_reader.
+ * @brief Consumes and returns the value corresponding to the next code in @a bit_reader. Returns -1 if @a bit_reader runs out of bits.
  * 
  * @param bit_reader Contains compressed data.
  * @param table Huffman table.
