@@ -18,14 +18,14 @@
 
 
 typedef struct BitReader {
-    const unsigned char*  compressed;
-    const unsigned char*  current_byte;
+    const unsigned char*    compressed;
+    const unsigned char*    current_byte;
 #ifdef INFLATE_CAREFUL
-    const unsigned char*  compressed_end; // Points to first character after compressed.
+    const unsigned char*    compressed_end; // Points to first character after compressed.
 #endif /* INFLATE_CAREFUL */
 
-    BufferType      bit_buffer;
-    size_t          bit_buffer_count;
+    BufferType              bit_buffer;
+    size_t                  bit_buffer_count;
 } BitReader;
 
 
