@@ -14,7 +14,7 @@
  * @param code_count Number of codes.
  * @return unsigned* 
  */
-unsigned int* huffmanTable(size_t* code_lengths, size_t code_count);
+unsigned int* huffmanTable(size_t* code_lengths, size_t code_count, size_t* max_code_length);
 
 /**
  * @brief Consumes and returns the value corresponding to the next code in @a bit_reader. Returns -1 if @a bit_reader runs out of bits.

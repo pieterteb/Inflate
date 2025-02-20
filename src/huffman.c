@@ -9,25 +9,26 @@
 
 
 
-unsigned int* huffmanTable(size_t* code_lengths, size_t code_count) {
+unsigned int* huffmanTable(size_t* code_lengths, size_t code_count, size_t* max_code_length) {
     size_t code_lenght_frequency[INFLATE_MAX_CODE_LENGTH + 1] = { 0 };
     for (size_t i = 0; i < code_count; ++i) {
         ++code_lenght_frequency[code_lengths[i]];
     }
+    code_lenght_frequency[0] = 0;
 
     /* Determine lowest possible code for each code length. */
     unsigned int code = 0;
     unsigned int next_code[INFLATE_MAX_CODE_LENGTH + 1] = { 0 };
-    size_t max_code_length = 0;
+    size_t max_code_length_temp = 0;
     for (size_t i = 1; i <= INFLATE_MAX_CODE_LENGTH; ++i) {
         code = (code + code_lenght_frequency[i - 1]) << 1;
         next_code[i] = code;
         if (code_lenght_frequency[i]) {
-            max_code_length = i;
+            max_code_length_temp = i;
         }
     }
 
-    size_t table_size = 1U << max_code_length;
+    size_t table_size = 1U << max_code_length_temp;
     unsigned int* table = malloc(table_size * sizeof(*table));
     memset(table, INFLATE_UNUSED_CODE, table_size * sizeof(*table));
 
@@ -36,7 +37,7 @@ unsigned int* huffmanTable(size_t* code_lengths, size_t code_count) {
     for (size_t i = 0; i < code_count; ++i) {
         current_length = code_lengths[i];
         if (current_length) {
-            table[next_code[current_length] << max_code_length - current_length] = (unsigned int)current_length << 16 | (unsigned int)i;
+            table[next_code[current_length] << max_code_length_temp - current_length] = (unsigned int)current_length << 16 | (unsigned int)i;
             ++next_code[current_length];
         }
     }
@@ -50,6 +51,10 @@ unsigned int* huffmanTable(size_t* code_lengths, size_t code_count) {
             current_code = table[i] & 0xFFFF;
             current_length = table[i] >> 16;
         }
+    }
+
+    if (max_code_length) {
+        *max_code_length = max_code_length_temp;
     }
 
     return table;
@@ -84,8 +89,6 @@ unsigned int getValue(BitReader* bit_reader, unsigned int* table, size_t max_cod
         }
     }
     getBits(bit_reader, table[code] >> 16);
-
-    printf("value %u\n", table[code] & 0xFFFF);
 
     return table[code] & 0xFFFF;
 }
