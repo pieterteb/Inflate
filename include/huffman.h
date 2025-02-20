@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+#include "bit_reader.h"
+
 
 
 /**

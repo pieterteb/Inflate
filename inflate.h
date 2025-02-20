@@ -6,7 +6,6 @@ https://datatracker.ietf.org/doc/html/rfc1951#section-3
 
 
 #include <stddef.h>
-#include "huffman.h"
 
 
 

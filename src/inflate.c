@@ -1,8 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
-#include "bit_reader.h"
+
 #include "inflate.h"
+#include "bit_reader.h"
+#include "huffman.h"
 
 
 
@@ -41,8 +44,7 @@ extern int inflate(const unsigned char* compressed, size_t compressed_length, un
 
     if (!uncompressed) {
         return INFLATE_NO_OUTPUT;
-    }
-    if (!compressed) {
+    } else if (!compressed) {
         return INFLATE_SUCCESS;
     }
 
@@ -146,7 +148,7 @@ static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed
 
 static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {
     size_t i = 0;
-    unsigned int code_lengths[INFLATE_CODE_COUNT];
+    size_t code_lengths[INFLATE_CODE_COUNT];
     for (; i <= 143; ++i) {
         code_lengths[i] = 8;
     }
@@ -161,7 +163,7 @@ static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompresse
     }
     unsigned int* code_table = huffmanTable(code_lengths, INFLATE_CODE_COUNT);
 
-    unsigned int distance_lengths[INFLATE_DISTANCE_COUNT];
+    size_t distance_lengths[INFLATE_DISTANCE_COUNT];
     for (i = 0; i < INFLATE_DISTANCE_COUNT; ++i) {
         distance_lengths[i] = 5;
     }
@@ -170,6 +172,7 @@ static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompresse
     unsigned int value = 0;
     do {
         value = getValue(bit_reader, code_table, 9);
+        printf("value %u\n", value);
 #ifdef INFLATE_CAREFUL
         if (value == (unsigned int)-1) {
             free(code_table);
@@ -207,6 +210,11 @@ static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompresse
             }
         }
     } while (value != INFLATE_END_OF_BLOCK);
+
+    free(code_table);
+    free(distance_table);
+
+    return INFLATE_SUCCESS;
 }
 
 
