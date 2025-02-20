@@ -2,18 +2,38 @@
 #define BIT_READER_H
 
 #include <stddef.h>
-#include <stdint.h>
 
 #include "inflate.h"
 
 
 
-#if defined(UINT64_MAX)
+/* If C standard is younger than ANSI C, we use the <stdint.h> header. Else we check for a 16 bit wide integer type. */
+#if defined(__STDC_VERSION__)
 #   define INFLATE_64_BIT
-    typedef unsigned long long BufferType;
-#elif defined(UINT32_MAX)
+
+#   include <stdint.h>
+
+    typedef unsigned long long Buffer;
+    typedef uint32_t Reader;
+#else
 #   define INFLATE_32_BIT
-    typedef unsigned long BufferType;
+
+#   include <limits.h>
+
+    typedef unsigned long Buffer;
+#   if UCHAR_MAX == 0xFFFF
+#   define INFLATE_16_BIT
+        typedef unsigned char Reader;
+#   elif SHRT_MAX == 0xFFFF
+#   define INFLATE_16_BIT
+        typedef unsigned short Reader;
+#   elif UINT_MAX == 0xFFFF
+#   define INFLATE_16_BIT
+        typedef unsigned int Reader;
+#   elif ULONG_MAX == 0xFFFF
+#   define INFLATE_16_BIT
+        typedef unsigned long Reader;
+#   endif
 #endif /* defined(UINT64_MAX) */
 
 
@@ -24,7 +44,7 @@ typedef struct BitReader {
     const unsigned char*    compressed_end; // Points to first character after compressed.
 #endif /* INFLATE_CAREFUL */
 
-    BufferType              bit_buffer;
+    Buffer                  bit_buffer;
     size_t                  bit_buffer_count;
 } BitReader;
 
