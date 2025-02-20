@@ -172,7 +172,6 @@ static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompresse
     unsigned int value = 0;
     do {
         value = getValue(bit_reader, code_table, 9);
-        printf("value %u\n", value);
 #ifdef INFLATE_CAREFUL
         if (value == (unsigned int)-1) {
             free(code_table);
@@ -276,7 +275,9 @@ static int handleLz77(unsigned int value, BitReader* bit_reader, unsigned int* c
     }
 #endif /* INFLATE_CAREFUL */
 
-    memmove(*uncompressed + *uncompressed_length, *uncompressed + *uncompressed_length - distance, length);
+    for (size_t i = 0; i < length; ++i) {
+        (*uncompressed)[*uncompressed_length + i] = (*uncompressed)[*uncompressed_length - distance + i];
+    }
     *uncompressed_length += length;
 
     return INFLATE_SUCCESS;

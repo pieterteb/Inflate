@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "huffman.h"
 #include "bit_reader.h"
@@ -83,6 +84,8 @@ unsigned int getValue(BitReader* bit_reader, unsigned int* table, size_t max_cod
         }
     }
     getBits(bit_reader, table[code] >> 16);
+
+    printf("value %u\n", table[code] & 0xFFFF);
 
     return table[code] & 0xFFFF;
 }
