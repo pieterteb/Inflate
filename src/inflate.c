@@ -111,7 +111,8 @@ static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed
 #ifdef INFLATE_CAREFUL
     if (block_length == (unsigned int)-1 || Nblock_length == (unsigned int)-1) {
         return INFLATE_COMPRESSED_INCOMPLETE;
-    } else if (block_length & 0xFFFF != ~Nblock_length & 0xFFFF) {
+    } else if ((block_length & 0xFFFFU) != (~Nblock_length & 0xFFFFU)) {
+        printf("hi\n");
         return INFLATE_WRONG_BLOCK_LENGTH;
     }
 #endif /* INFLATE_CAREFUL */
