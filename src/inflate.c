@@ -14,6 +14,7 @@
 #define INFLATE_HIGHEST_LITERAL_CODE    285UL
 #define INFLATE_DISTANCE_CODE_COUNT     32UL
 #define INFLATE_HIGHEST_DISTANCE_CODE   29UL
+#define INFLATE_CODE_LENGTH_CODE_COUNT  19UL
 
 
 typedef struct Decompressed {
@@ -160,13 +161,7 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
         return INFLATE_BLOCK_LENGTH_UNCERTAIN;
 
     /* Expand current output array if necessary. */
-    if (decompressed->length + block_length > decompressed->size) {
-        decompressed->size = decompressed->length + block_length;
-        decompressed->bytes = realloc(decompressed->bytes, decompressed->size * sizeof(*decompressed->bytes));
-
-        if (!decompressed->bytes)
-            return INFLATE_NO_MEMORY;
-    }
+    result = expand_decompressed(decompressed, decompressed->length + block_length);
 
     /* If not enough bytes remain in bit reader, copy as many as possible. */
     if (bit_reader->current_byte + block_length >= bit_reader->compressed_end) {
@@ -220,130 +215,106 @@ static unsigned int code_length_code_length_order[] = {
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
 };
 
-static int dynamic_huffman_block(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {
+static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompressed) {
+    int result = INFLATE_SUCCESS;
+
+    /* Read information defining this deflate block. (The obtained values correspond to HLIT, HDIST and HCLEN in RFC 1951.) */
+    fill_buffer(bit_reader);
     size_t literal_code_count = getBits(bit_reader, 5);
     size_t distance_code_count = getBits(bit_reader, 5);
     size_t code_length_code_count = getBits(bit_reader, 4);
-    if (literal_code_count == (unsigned int)-1 || distance_code_count == (unsigned int)-1 || code_length_code_count == (unsigned int)-1) {
+    if (literal_code_count == INFLATE_GENERAL_FAILURE || distance_code_count == INFLATE_GENERAL_FAILURE || code_length_code_count == INFLATE_GENERAL_FAILURE)
         return INFLATE_COMPRESSED_INCOMPLETE;
-    }
     literal_code_count += 257;
     distance_code_count += 1;
     code_length_code_count += 4;
 
-    size_t code_length_code_lengths[19] = { 0 };
+    /* Initialise code length code lengths as defined by the deflate standard (RFC 1951). */
+    size_t code_length_code_lengths[INFLATE_CODE_LENGTH_CODE_COUNT] = { 0 };
+    unsigned int code_length_value = 0;
     for (size_t i = 0; i < code_length_code_count; ++i) {
-        code_length_code_lengths[code_length_code_length_order[i]] = getBits(bit_reader, 3);
-        if (code_length_code_lengths[code_length_code_length_order[i]] == (unsigned int)-1) {
+        code_length_value = code_length_code_length_order[i];
+        code_length_code_lengths[code_length_value] = get_bits(bit_reader, 3);
+
+        if (code_length_code_lengths[code_length_value] == INFLATE_GENERAL_FAILURE)
             return INFLATE_COMPRESSED_INCOMPLETE;
-        }
     }
     
+    /* Calculate code length Huffman table. */
     size_t max_code_length_code_length = 0;
-    unsigned int* code_length_table = huffmanTable(code_length_code_lengths, 19, &max_code_length_code_length);
+    unsigned int* code_length_table = huffman_table(code_length_code_lengths, INFLATE_CODE_LENGTH_CODE_COUNT, &max_code_length_code_length);
 
-    size_t* literal_code_lengths = malloc((literal_code_count + distance_code_count) * sizeof(*literal_code_lengths));
-    if (!literal_code_lengths) {
+    /* code_lengths contains both the literal code lengths and the distance code lengths. */
+    size_t code_lengths_count = literal_code_count + distance_code_count;
+    size_t* code_lengths = malloc(code_lengths_count * sizeof(*code_lengths));
+    if (!code_lengths)
         return INFLATE_NO_MEMORY;
-    }
-    size_t* distance_code_lengths = literal_code_lengths + literal_code_count;
+    size_t* literal_code_lengths = code_lengths;
+    size_t* distance_code_lengths = code_lengths + literal_code_count;
 
+    /* Decode literal and distance code lengths. */
     size_t i = 0;
     unsigned int value = 0;
-    while (i < literal_code_count + distance_code_count) {
-        value = getValue(bit_reader, code_length_table, max_code_length_code_length);
-        if (value == (unsigned int)-1) {
+    while (i < code_lengths_count) {
+        fill_buffer(bit_reader);
+        value = get_value(bit_reader, code_length_table, max_code_length_code_length);
+        if (value == INFLATE_GENERAL_FAILURE)
             return INFLATE_COMPRESSED_INCOMPLETE;
-        }
 
         if (value <= 15) {
-            literal_code_lengths[i] = value;
+            code_lengths[i] = value;
             ++i;
-        } else if (value == 16) {
-            unsigned int repeat_length = getBits(bit_reader, 2);
-            if (repeat_length == (unsigned int)-1) {
-                return INFLATE_COMPRESSED_INCOMPLETE;
-            }
-            repeat_length += 3;
-            for (size_t j = 0; j < repeat_length; ++j) {
-                literal_code_lengths[i] = literal_code_lengths[i - 1];
-                ++i;
-            }
-        } else if (value == 17) {
-            unsigned int repeat_length = getBits(bit_reader, 3);
-            if (repeat_length == (unsigned int)-1) {
-                return INFLATE_COMPRESSED_INCOMPLETE;
-            }
-            repeat_length += 3;
-            for (size_t j = 0; j < repeat_length; ++j) {
-                literal_code_lengths[i] = 0;
-                ++i;
-            }
-        } else if (value == 18) {
-            unsigned int repeat_length = getBits(bit_reader, 7);
-            if (repeat_length == (unsigned int)-1) {
-                return INFLATE_COMPRESSED_INCOMPLETE;
-            }
-            repeat_length += 11;
-            for (size_t j = 0; j < repeat_length; ++j) {
-                literal_code_lengths[i] = 0;
-                ++i;
+        } else {
+            unsigned int repeat_length = 0;
+            if (value == 16) {
+                repeat_length = get_bits(bit_reader, 2);
+                if (repeat_length == INFLATE_GENERAL_FAILURE)
+                    return INFLATE_COMPRESSED_INCOMPLETE;
+
+                repeat_length += 3;
+                for (size_t j = 0; j < repeat_length; ++j) {
+                    code_lengths[i] = code_lengths[i - 1];
+                    ++i;
+                }
+            } else if (value == 17) {
+                repeat_length = get_bits(bit_reader, 3);
+                if (repeat_length == INFLATE_GENERAL_FAILURE)
+                    return INFLATE_COMPRESSED_INCOMPLETE;
+
+                repeat_length += 3;
+                for (size_t j = 0; j < repeat_length; ++j) {
+                    code_lengths[i] = 0;
+                    ++i;
+                }
+            } else { // value == 18.
+                repeat_length = get_bits(bit_reader, 7);
+                if (repeat_length == INFLATE_GENERAL_FAILURE)
+                    return INFLATE_COMPRESSED_INCOMPLETE;
+                
+                repeat_length += 11;
+                for (size_t j = 0; j < repeat_length; ++j) {
+                    code_lengths[i] = 0;
+                    ++i;
+                }
             }
         }
     }
     free(code_length_table);
     
+    /* Calculate literal and distance Huffman tables. */
     size_t max_literal_code_length = 0;
     size_t max_distance_code_length = 0;
     unsigned int* literal_table = huffmanTable(literal_code_lengths, literal_code_count, &max_literal_code_length);
     unsigned int* distance_table = huffmanTable(distance_code_lengths, distance_code_count, &max_distance_code_length);
-    free(literal_code_lengths);
+    free(code_lengths); // This implicitly frees literal_code_lengths and distance_code_lengths.
 
-    value = 0;
-    do {
-        value = getValue(bit_reader, literal_table, max_literal_code_length);
-#ifdef INFLATE_CAREFUL
-        if (value == (unsigned int)-1) {
-            free(literal_table);
-            free(distance_table);
-            return INFLATE_COMPRESSED_INCOMPLETE;
-        }
-#endif /* INFLATE_CAREFUL */
-
-        if (value < INFLATE_END_OF_BLOCK) {
-            if (*uncompressed_length == *uncompressed_size) {
-                *uncompressed_size *= 2;
-                *uncompressed = realloc(*uncompressed, *uncompressed_size);
-
-                if (!*uncompressed) {
-                    free(literal_table);
-                    free(distance_table);
-                    return INFLATE_NO_MEMORY;
-                }
-            }
-
-            (*uncompressed)[*uncompressed_length] = value;
-            ++*uncompressed_length;
-#ifdef INFLATE_CAREFUL
-        } else if (value > 285) {
-            free(literal_table);
-            free(distance_table);
-            return INFLATE_UNUSED_VALUE;
-#endif /* INFLATE_CAREFUL */
-        } else if (value > INFLATE_END_OF_BLOCK) {
-            int result = handleLz77(value, bit_reader, literal_table, distance_table, max_distance_code_length, uncompressed, uncompressed_length, uncompressed_size);
-            if (result) {
-                free(literal_table);
-                free(distance_table);
-                return result;
-            }
-        }
-    } while (value != INFLATE_END_OF_BLOCK);
+    /* Process block data. */
+    result = process_encoded_block_data(bit_reader, decompressed, literal_table, distance_table, max_literal_code_length, max_distance_code_length);
 
     free(literal_table);
     free(distance_table);
 
-    return INFLATE_SUCCESS;
+    return result;
 }
 
 static int process_encoded_block_data(BitReader* bit_reader, Decompressed* decompressed, const unsigned int* literal_table, const unsigned int* distance_table, const size_t max_literal_code_length, const size_t max_distance_code_length) {
