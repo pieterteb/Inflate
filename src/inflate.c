@@ -42,6 +42,13 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
  */
 static int fixed_huffman_block(BitReader* bit_reader, Decompressed* decompressed);
 
+/**
+ * @brief Decompress a deflate block compressed with dynamic Huffman encoding. Returns an error code in case of an error.
+ * 
+ * @param bit_reader Contains compressed data.
+ * @param decompressed Contains decompressed data.
+ * @return int
+ */
 static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompressed);
 
 /**
@@ -51,8 +58,8 @@ static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompress
  * @param decompressed Contains decompressed data.
  * @param literal_table Literal Huffman table.
  * @param distance_table Distance Huffman table.
- * @param max_literal_code_length Length of the longest literal code used to create @a literal_table.
- * @param max_distance_code_length Length of the longest distance code used to create @a distance_table.
+ * @param max_literal_code_length Length of a longest literal code used to create @a literal_table.
+ * @param max_distance_code_length Length of a longest distance code used to create @a distance_table.
  * @return int
  */
 static int process_encoded_block_data(BitReader* bit_reader, Decompressed* decompressed, const unsigned int* literal_table, const unsigned int* distance_table, const size_t max_literal_code_length, const size_t max_distance_code_length);
@@ -63,7 +70,7 @@ static int process_encoded_block_data(BitReader* bit_reader, Decompressed* decom
  * @param bit_reader Contains compressed data.
  * @param decompressed Contains decompressed data.
  * @param distance_table Distance Huffman table.
- * @param max_distance_code_length Length of the longest distance code used to create @a distance_table.
+ * @param max_distance_code_length Length of a longest distance code used to create @a distance_table.
  * @param value Lz77 value.
  * @return int
  */
@@ -323,6 +330,7 @@ static int process_encoded_block_data(BitReader* bit_reader, Decompressed* decom
     /* Decode all Huffman codes in deflate block as specified in the deflate standard (RFC 1951). */
     unsigned int value = 0;
     do {
+        fill_buffer(bit_reader);
         value = get_value(bit_reader, literal_table, max_literal_code_length);
         if (value == INFLATE_GENERAL_FAILURE) {
             result = INFLATE_COMPRESSED_INCOMPLETE;
