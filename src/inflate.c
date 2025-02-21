@@ -1,109 +1,97 @@
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-
 
 #include "inflate.h"
+#include "inflate_internal.h"
 #include "bit_reader.h"
 #include "huffman.h"
 
 
 
-#define INFLATE_END_OF_BLOCK    256U
-#define INFLATE_CODE_COUNT      288U
-#define INFLATE_DISTANCE_COUNT  32U
+/* Deflate defined constants. */
+#define INFLATE_END_OF_BLOCK        256U
+#define INFLATE_LITERAL_CODE_COUNT  288UL
+#define INFLATE_DISTANCE_CODE_COUNT 32UL
 
 
-/**
- * @brief Processes an uncompressed block.
- * 
- * @param bit_reader Contains compressed data.
- * @param uncompressed Contains uncompressed data.
- * @param uncompressed_length Length in bytes of uncompressed data.
- * @param uncompressed_size Size in bytes of uncommpressed memory block.
- * @return int 
- */
-static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size);
-
-/**
- * @brief Processes a block using fixed encoding.
- * 
- * @param bit_reader Contains compressed data.
- * @param uncompressed Contains uncompressed data.
- * @param uncompressed_length Length in bytes of uncompressed data.
- * @param uncompressed_size Size in bytes of uncompressed memory block.
- * @return int 
- */
-static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size);
-
-static int dynamic_huffman_block(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size);
-
-static int handleLz77(unsigned int value, BitReader* bit_reader, unsigned int* code_table, unsigned int* distance_table, size_t max_distance_code_length, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size);
+typedef struct Decompressed {
+    unsigned char*  bytes;
+    size_t          length;
+    size_t          size;
+} Decompressed;
 
 
-extern int inflate(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length) {
-    *uncompressed_length = 0;
+static int uncompressed_block(BitReader* bit_reader, Decompressed* uncompressed);
 
-    if (!uncompressed) {
+static int fixed_huffman_block(BitReader* bit_reader, Decompressed* uncompressed);
+
+static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* uncompressed);
+
+static int lz77(unsigned int value, BitReader* bit_reader, unsigned int* code_table, unsigned int* distance_table, size_t max_distance_code_length, Decompressed* uncompressed);
+
+
+extern int inflate(const unsigned char* compressed, const size_t compressed_length, unsigned char** decompressed, size_t* decompressed_length) {
+    int result = INFLATE_SUCCESS;
+
+    if (!decompressed) {
         return INFLATE_NO_OUTPUT;
-    } else if (!compressed) {
-        return INFLATE_SUCCESS;
     }
 
-    size_t uncompressed_size = compressed_length * sizeof(**uncompressed) / 4;
-    if (!uncompressed_size) {
-        uncompressed_size = 1;
+    Decompressed decompressed_local = { 0 };
+
+    if (compressed && compressed_length) {
+        /* Initialise decompression output. */
+        decompressed_local.size = compressed_length * sizeof(*decompressed_local.bytes) > 0 ? compressed_length * sizeof(*decompressed_local.bytes) : 1;
+        decompressed_local.bytes = malloc(decompressed_local.size);
+        if (!*decompressed_local.bytes)
+            return INFLATE_NO_MEMORY;
+
+        BitReader bit_reader = {
+            .compressed = compressed,
+            .current_byte = compressed,
+            .compressed_end = compressed + compressed_length,
+            .bit_buffer = 0,
+            .bit_buffer_count = 0
+        };
+
+        /* Process blocks. */
+        unsigned int final_block = 0;
+        unsigned int block_type = 0;
+        do {
+            final_block = getBits(&bit_reader, 1);
+            block_type = getBits(&bit_reader, 2);
+            if (final_block == INFLATE_GENERAL_FAILURE || block_type == INFLATE_GENERAL_FAILURE) {
+                return INFLATE_COMPRESSED_INCOMPLETE;
+            }
+
+            switch (block_type) {
+                case 0: // Non-compressed block.
+                    result = uncompressedBlock(&bit_reader, &decompressed_local);
+                    break;
+                case 1: // Fixed Huffman encoding.
+                    result = fixedEncodingBlock(&bit_reader, &decompressed_local);
+                    break;
+                case 2: // Dynamic Huffman encoding.
+                    result = dynamic_huffman_block(&bit_reader, &decompressed_local);
+                    break;
+                case 3: // Unused block type.
+                    result = INFLATE_INVALID_BLOCK_TYPE;
+                    break;
+                default:
+                    break;
+            }
+
+            if (result)
+                break;
+        } while (!final_block);
     }
-    *uncompressed = malloc(uncompressed_size);
-    if (!*uncompressed) {
-        return INFLATE_NO_MEMORY;
-    }
 
-    BitReader bit_reader = {
-        .compressed = compressed,
-        .current_byte = compressed,
-#ifdef INFLATE_CAREFUL
-        .compressed_end = compressed + compressed_length,
-#endif /* INFLATE_CAREFUL */
-        .bit_buffer = 0,
-        .bit_buffer_count = 0
-    };
+    *decompressed = decompressed_local.bytes;
+    if (decompressed_length) {
+        *decompressed_length = decompressed_local.length;
+    }    
 
-    /* Process blocks. */
-    unsigned int final_block = 0;
-    unsigned int block_type = 0;
-    do {
-        final_block = getBits(&bit_reader, 1);
-        block_type = getBits(&bit_reader, 2);
-#ifdef INFLATE_CAREFUL
-        if (final_block == (unsigned int)-1 || block_type == (unsigned int)-1) {
-            return INFLATE_COMPRESSED_INCOMPLETE;
-        }
-#endif /* INFLATE_CAREFUL */
-
-        unsigned int result = INFLATE_SUCCESS;
-        switch (block_type) {
-            case 0: // Non-compressed block.
-                result = uncompressedBlock(&bit_reader, uncompressed, uncompressed_length, &uncompressed_size);
-                break;
-            case 1: // Fixed Huffman encoding.
-                result = fixedEncodingBlock(&bit_reader, uncompressed, uncompressed_length, &uncompressed_size);
-                break;
-            case 2: // Dynamic Huffman encoding.
-                result = dynamic_huffman_block(&bit_reader, uncompressed, uncompressed_length, &uncompressed_size);
-                break;
-            case 3:
-                return INFLATE_INVALID_BLOCK_TYPE;
-            default:
-                break;
-        }
-
-        if (result) {
-            return result;
-        }
-    } while (!final_block);
-
-    return INFLATE_SUCCESS;
+    return result;
 }
 
 static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {

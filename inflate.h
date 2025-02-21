@@ -10,7 +10,7 @@ https://datatracker.ietf.org/doc/html/rfc1951#section-3
 
 
 /* Inflate success and error codes. */
-enum {
+enum InflateError {
     INFLATE_SUCCESS = 0,
     INFLATE_NO_OUTPUT,
     INFLATE_NO_MEMORY,
@@ -22,8 +22,7 @@ enum {
 };
 
 
-extern int inflate(const unsigned char* compressed, const size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length);
-
+extern int inflate(const unsigned char* compressed, const size_t compressed_length, unsigned char** decompressed, size_t* decompressed_length);
 
 
 #endif /* INFLATE_H */
