@@ -21,13 +21,13 @@ typedef struct Decompressed {
 } Decompressed;
 
 
-static int uncompressed_block(BitReader* bit_reader, Decompressed* uncompressed);
+static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed);
 
-static int fixed_huffman_block(BitReader* bit_reader, Decompressed* uncompressed);
+static int fixed_huffman_block(BitReader* bit_reader, Decompressed* decompressed);
 
-static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* uncompressed);
+static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompressed);
 
-static int lz77(unsigned int value, BitReader* bit_reader, unsigned int* code_table, unsigned int* distance_table, size_t max_distance_code_length, Decompressed* uncompressed);
+static int lz77(unsigned int value, BitReader* bit_reader, unsigned int* code_table, unsigned int* distance_table, size_t max_distance_code_length, Decompressed* decompressed);
 
 
 extern int inflate(const unsigned char* compressed, const size_t compressed_length, unsigned char** decompressed, size_t* decompressed_length) {
@@ -86,55 +86,51 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
         } while (!final_block);
     }
 
+    if (decompressed_local.length)
+        decompressed_local.bytes = realloc(decompressed_local.bytes, decompressed_local.length);
+
     *decompressed = decompressed_local.bytes;
-    if (decompressed_length) {
+    if (decompressed_length)
         *decompressed_length = decompressed_local.length;
-    }    
 
     return result;
 }
 
-static int uncompressedBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {
-    nextByte(bit_reader);
-    fillBuffer(bit_reader);
+static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed) {
+    int result = INFLATE_SUCCESS;
+
+    /* Go to nearest byte boundary and fill bit buffer. */
+    next_byte(bit_reader);
+    fill_buffer(bit_reader);
+
+    /* Check whether block length and its one's complement match (LEN and NLEN in RFC 1951). */
     unsigned int block_length = getBits(bit_reader, 16);
     unsigned int Nblock_length = getBits(bit_reader, 16);
-#ifdef INFLATE_CAREFUL
-    if (block_length == (unsigned int)-1 || Nblock_length == (unsigned int)-1) {
+    if (block_length == INFLATE_GENERAL_FAILURE || Nblock_length == INFLATE_GENERAL_FAILURE)
         return INFLATE_COMPRESSED_INCOMPLETE;
-    } else if ((block_length & 0xFFFFU) != (~Nblock_length & 0xFFFFU)) {
-        return INFLATE_WRONG_BLOCK_LENGTH;
-    }
-#endif /* INFLATE_CAREFUL */
-    
-    while (block_length + *uncompressed_length > *uncompressed_size) {
-        *uncompressed_size *= 2;
-        *uncompressed = realloc(*uncompressed, *uncompressed_size * sizeof(**uncompressed));
-        if (!*uncompressed) {
+    else if ((block_length & 0xFFFFU) != (~Nblock_length & 0xFFFFU))
+        return INFLATE_BLOCK_LENGTH_UNCERTAIN;
+
+    /* Expand current output array if necessary. */
+    if (decompressed->length + block_length > decompressed->size) {
+        decompressed->size = decompressed->length + block_length;
+        decompressed->bytes = realloc(decompressed->bytes, decompressed->size * sizeof(*decompressed->bytes));
+
+        if (!decompressed->bytes)
             return INFLATE_NO_MEMORY;
-        }
     }
 
-#ifdef INFLATE_CAREFUL
-    /* If not enough bytes remain, copy as many as possible. */
+    /* If not enough bytes remain in bit reader, copy as many as possible. */
     if (bit_reader->current_byte + block_length >= bit_reader->compressed_end) {
-        size_t bytes_left = bit_reader->compressed_end - bit_reader->current_byte;
-        memcpy(*uncompressed + *uncompressed_length, bit_reader->current_byte, bytes_left);
-        bit_reader->current_byte = bit_reader->compressed_end;
-        *uncompressed_length += bytes_left;
+        block_length = bit_reader->compressed_end - bit_reader->current_byte;
 
-        *uncompressed_size = *uncompressed_length;
-        *uncompressed = realloc(*uncompressed, *uncompressed_size * sizeof(**uncompressed)); // There is no reason this reallocation would fail.
-
-        return INFLATE_COMPRESSED_INCOMPLETE;
+        result = INFLATE_COMPRESSED_INCOMPLETE;
     }
-#endif /* INFLATE_CAREFUL */
-
-    memcpy(*uncompressed + *uncompressed_length, bit_reader->current_byte, block_length);
+    memcpy(decompressed->bytes + decompressed->length, bit_reader->current_byte, block_length);
     bit_reader->current_byte += block_length;
-    *uncompressed_length += block_length;
+    decompressed->length += block_length;
 
-    return INFLATE_SUCCESS;
+    return result;
 }
 
 static int fixedEncodingBlock(BitReader* bit_reader, unsigned char** uncompressed, size_t* uncompressed_length, size_t* uncompressed_size) {
