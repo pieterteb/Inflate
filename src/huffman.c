@@ -9,7 +9,7 @@
 
 
 
-unsigned int* huffmanTable(size_t* code_lengths, size_t code_count, size_t* max_code_length) {
+unsigned int* huffman_table(size_t* code_lengths, size_t code_count, size_t* max_code_length) {
     size_t code_lenght_frequency[INFLATE_MAX_CODE_LENGTH + 1] = { 0 };
     for (size_t i = 0; i < code_count; ++i) {
         ++code_lenght_frequency[code_lengths[i]];
@@ -60,7 +60,7 @@ unsigned int* huffmanTable(size_t* code_lengths, size_t code_count, size_t* max_
     return table;
 }
 
-unsigned int getValue(BitReader* bit_reader, unsigned int* table, size_t max_code_length) {
+unsigned int get_value(BitReader* bit_reader, unsigned int* table, size_t max_code_length) {
     unsigned int bit = peekBits(bit_reader, 1);
 #ifdef INFLATE_CAREFUL
     if (bit == (unsigned int)-1) {
