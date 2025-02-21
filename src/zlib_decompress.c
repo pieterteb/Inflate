@@ -21,11 +21,11 @@ extern int zlib_decompress(const unsigned char* compressed, size_t compressed_le
         .bit_buffer_count = 0
     };
 
-    getBits(&bit_reader, 16);
+    get_bits(&bit_reader, 16);
 
     int result = inflate(bit_reader.current_byte, compressed_length - 6, uncompressed, uncompressed_length);
-    nextByte(&bit_reader);
-    getBits(&bit_reader, 32);
+    next_byte(&bit_reader);
+    get_bits(&bit_reader, 32);
 
     return result;
 }

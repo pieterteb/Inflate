@@ -114,18 +114,18 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
         unsigned int final_block = 0;
         unsigned int block_type = 0;
         do {
-            final_block = getBits(&bit_reader, 1);
-            block_type = getBits(&bit_reader, 2);
+            final_block = get_bits(&bit_reader, 1);
+            block_type = get_bits(&bit_reader, 2);
             if (final_block == INFLATE_GENERAL_FAILURE || block_type == INFLATE_GENERAL_FAILURE) {
                 return INFLATE_COMPRESSED_INCOMPLETE;
             }
 
             switch (block_type) {
                 case 0: // Non-compressed block.
-                    result = uncompressedBlock(&bit_reader, &decompressed_local);
+                    result = uncompressed_block(&bit_reader, &decompressed_local);
                     break;
                 case 1: // Fixed Huffman encoding.
-                    result = fixedEncodingBlock(&bit_reader, &decompressed_local);
+                    result = fixed_huffman_block(&bit_reader, &decompressed_local);
                     break;
                 case 2: // Dynamic Huffman encoding.
                     result = dynamic_huffman_block(&bit_reader, &decompressed_local);
@@ -160,8 +160,8 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
     fill_buffer(bit_reader);
 
     /* Check whether block length and its one's complement match (LEN and NLEN in RFC 1951). */
-    unsigned int block_length = getBits(bit_reader, 16);
-    unsigned int Nblock_length = getBits(bit_reader, 16);
+    unsigned int block_length = get_bits(bit_reader, 16);
+    unsigned int Nblock_length = get_bits(bit_reader, 16);
     if (block_length == INFLATE_GENERAL_FAILURE || Nblock_length == INFLATE_GENERAL_FAILURE)
         return INFLATE_COMPRESSED_INCOMPLETE;
     else if ((block_length & 0xFFFFU) != (~Nblock_length & 0xFFFFU))
@@ -227,9 +227,9 @@ static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompress
 
     /* Read information defining this deflate block. (The obtained values correspond to HLIT, HDIST and HCLEN in RFC 1951.) */
     fill_buffer(bit_reader);
-    size_t literal_code_count = getBits(bit_reader, 5);
-    size_t distance_code_count = getBits(bit_reader, 5);
-    size_t code_length_code_count = getBits(bit_reader, 4);
+    size_t literal_code_count = get_bits(bit_reader, 5);
+    size_t distance_code_count = get_bits(bit_reader, 5);
+    size_t code_length_code_count = get_bits(bit_reader, 4);
     if (literal_code_count == INFLATE_GENERAL_FAILURE || distance_code_count == INFLATE_GENERAL_FAILURE || code_length_code_count == INFLATE_GENERAL_FAILURE)
         return INFLATE_COMPRESSED_INCOMPLETE;
     literal_code_count += 257;
@@ -311,8 +311,8 @@ static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompress
     /* Calculate literal and distance Huffman tables. */
     size_t max_literal_code_length = 0;
     size_t max_distance_code_length = 0;
-    unsigned int* literal_table = huffmanTable(literal_code_lengths, literal_code_count, &max_literal_code_length);
-    unsigned int* distance_table = huffmanTable(distance_code_lengths, distance_code_count, &max_distance_code_length);
+    unsigned int* literal_table = huffman_table(literal_code_lengths, literal_code_count, &max_literal_code_length);
+    unsigned int* distance_table = huffman_table(distance_code_lengths, distance_code_count, &max_distance_code_length);
     free(code_lengths); // This implicitly frees literal_code_lengths and distance_code_lengths.
 
     /* Process block data. */
