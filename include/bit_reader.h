@@ -30,19 +30,14 @@
 #   elif UINT_MAX == 0xFFFF
 #   define INFLATE_16_BIT
         typedef unsigned int Reader;
-#   elif ULONG_MAX == 0xFFFF
-#   define INFLATE_16_BIT
-        typedef unsigned long Reader;
 #   endif
 #endif /* defined(UINT64_MAX) */
 
 
 typedef struct BitReader {
-    const unsigned char*    compressed;
+    const unsigned char*    compressed;     // Pointer to compressed data.
     const unsigned char*    current_byte;
-#ifdef INFLATE_CAREFUL
-    const unsigned char*    compressed_end; // Points to first character after compressed.
-#endif /* INFLATE_CAREFUL */
+    const unsigned char*    compressed_end; // Pointer to first character after compressed.
 
     Buffer                  bit_buffer;
     size_t                  bit_buffer_count;
@@ -54,32 +49,32 @@ typedef struct BitReader {
  * 
  * @param bit_reader Contains compressed data.
  */
-void fillBuffer(BitReader* bit_reader);
+void fill_buffer(BitReader* bit_reader);
 
 /**
- * @brief Get @a count bits from @a bit_reader and consume them if available. Else returns -1.
+ * @brief Read @a count bits from @a bit_reader and consume them if available. Else returns INFLATE_GENERAL_FAILURE.
  * 
  * @param bit_reader Contains compressed data.
- * @param count Number of bits. At most 16 bits can be requested.
- * @return unsigned int 
+ * @param count Number of bits. At most 16 bits can be requested in a single function call.
+ * @return unsigned int
  */
-unsigned int getBits(BitReader* bit_reader, size_t count);
+unsigned int get_bits(BitReader* bit_reader, size_t count);
 
 /**
- * @brief Read @a count bits from @a bit_reader if available. Else returns -1.
+ * @brief Read @a count bits from @a bit_reader without consuming the bits if available. Else returns INFLATE_GENERAL_FAILURE.
  * 
  * @param bit_reader Contains compressed data.
- * @param count Number of bits. At most 16 bits can be requested.
- * @return unsigned int 
+ * @param count Number of bits. At most 16 bits can be requested in a single function call.
+ * @return unsigned int
  */
-unsigned int peekBits(BitReader* bit_reader, size_t count);
+unsigned int peek_bits(BitReader* bit_reader, size_t count);
 
 /**
- * @brief Move @a bit_reader to next byte boundary.
+ * @brief Move @a bit_reader to nearest byte boundary. If @a bit_reader is already on a byte boundary, does nothing.
  * 
  * @param bit_reader Contains compressed data.
  */
-void nextByte(BitReader* bit_reader);
+void next_byte(BitReader* bit_reader);
 
 
 
