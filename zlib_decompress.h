@@ -5,19 +5,11 @@
 
 #include <stddef.h>
 
+#include "MDE.h"
 
 
-/* 
-If not defined, zlib_decompress() is optimised with the assumption that input is error-free zlib.
-If defined, invalid zlib will be handled by returning an error code, corresponding to the fault encountered first.
-*/
-#define ZLIB_DECOMPRESS_CAREFUL
-#if defined(ZLIB_DECOMPRESS_CAREFUL) && !defined(INFLATE_CAREFUL)
-#   define INFLATE_CAREFUL
-#endif /* defined(ZLIB_DECOMPRESS_CAREFUL) && !defined(INFLATE_CAREFUL) */
 
-
-enum {
+enum ZlibDecompressError {
     ZLIB_DECOMPRESS_SUCCESS = 0,
     ZLIB_DECOMPRESS_NO_OUTPUT,
 };

@@ -6,10 +6,10 @@
 void fill_buffer(BitReader* bit_reader) {
 /* Attempt to add 4 or 2 bytes to bit buffer depending on the platform. If not enough bytes remain, do nothing. */
 #ifdef INFLATE_64_BIT
-    if (bit_reader->bit_buffer_count <= 32 && bit_reader->current_byte + 4 < bit_reader->compressed_end) {
+if (bit_reader->bit_buffer_count <= 32 && bit_reader->current_byte + 4 < bit_reader->compressed_end) {
     /* Check if platform allows unaligned access. */
-#   if defined(_M_X64) || defined(__x86_64__)
-        bit_reader->bit_buffer |= *(Reader*)bit_reader->current_byte << bit_reader->bit_buffer_count;
+    #   if defined(_M_X64) || defined(__x86_64__)
+        bit_reader->bit_buffer |= (unsigned long long)*(Reader*)bit_reader->current_byte << bit_reader->bit_buffer_count;
         bit_reader->bit_buffer_count += 32;
         bit_reader->current_byte += 4;
 #   else
@@ -31,7 +31,7 @@ void fill_buffer(BitReader* bit_reader) {
     if (bit_reader->bit_buffer_count <= 16 && bit_reader->current_byte + 2 < bit_reader->compressed_end) {
     /* Check if platform allows unaligned access. */
 #   if defined(INFLATE_16_BIT) && (defined(_M_IX86) || defined(__x86__))
-        bit_reader->bit_buffer |= *(Reader*)bit_reader->current_byte << bit_reader->bit_buffer_count;
+        bit_reader->bit_buffer |= (unsigned long)*(Reader*)bit_reader->current_byte << bit_reader->bit_buffer_count;
         bit_reader->bit_buffer_count += 16;
         bit_reader->current_byte += 2;
 #   else

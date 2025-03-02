@@ -89,9 +89,8 @@ static int expand_decompressed(Decompressed* decompressed, const size_t new_leng
 extern int inflate(const unsigned char* compressed, const size_t compressed_length, unsigned char** decompressed, size_t* decompressed_length) {
     int result = INFLATE_SUCCESS;
 
-    if (!decompressed) {
+    if (!decompressed)
         return INFLATE_NO_OUTPUT;
-    }
 
     Decompressed decompressed_local = { 0 };
 
@@ -116,9 +115,8 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
         do {
             final_block = get_bits(&bit_reader, 1);
             block_type = get_bits(&bit_reader, 2);
-            if (final_block == INFLATE_GENERAL_FAILURE || block_type == INFLATE_GENERAL_FAILURE) {
+            if (final_block == INFLATE_GENERAL_FAILURE || block_type == INFLATE_GENERAL_FAILURE)
                 return INFLATE_COMPRESSED_INCOMPLETE;
-            }
 
             switch (block_type) {
                 case 0: // Non-compressed block.
@@ -144,7 +142,6 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
 
     if (decompressed_local.length)
         decompressed_local.bytes = realloc(decompressed_local.bytes, decompressed_local.length);
-
     *decompressed = decompressed_local.bytes;
     if (decompressed_length)
         *decompressed_length = decompressed_local.length;
@@ -223,8 +220,6 @@ static unsigned int code_length_code_length_order[] = {
 };
 
 static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompressed) {
-    int result = INFLATE_SUCCESS;
-
     /* Read information defining this deflate block. (The obtained values correspond to HLIT, HDIST and HCLEN in RFC 1951.) */
     fill_buffer(bit_reader);
     size_t literal_code_count = get_bits(bit_reader, 5);
@@ -316,6 +311,7 @@ static int dynamic_huffman_block(BitReader* bit_reader, Decompressed* decompress
     free(code_lengths); // This implicitly frees literal_code_lengths and distance_code_lengths.
 
     /* Process block data. */
+    int result = INFLATE_SUCCESS;
     result = process_encoded_block_data(bit_reader, decompressed, literal_table, distance_table, max_literal_code_length, max_distance_code_length);
 
     free(literal_table);
@@ -338,16 +334,7 @@ static int process_encoded_block_data(BitReader* bit_reader, Decompressed* decom
         }
 
         if (value < INFLATE_END_OF_BLOCK_LITERAL) {
-            if (decompressed->length == decompressed->size) {
-                decompressed->size *= 2;
-                decompressed->bytes = realloc(decompressed->bytes, decompressed->size);
-
-                if (!decompressed->size) {
-                    result = INFLATE_NO_MEMORY;
-                    break;
-                }
-            }
-
+            expand_decompressed(decompressed, decompressed->length + 1);
             decompressed->bytes[decompressed->length] = value;
             ++decompressed->length;
         } else if (value > INFLATE_HIGHEST_LITERAL_CODE) {
@@ -355,7 +342,6 @@ static int process_encoded_block_data(BitReader* bit_reader, Decompressed* decom
             break;
         } else if (value > INFLATE_END_OF_BLOCK_LITERAL) {
             result = lz77(bit_reader, decompressed, distance_table, max_distance_code_length, value);
-
             if (result)
                 break;
         }
@@ -382,8 +368,6 @@ static unsigned int distance_extra_bits[] = {
 };
 
 static int lz77(BitReader* bit_reader, Decompressed* decompressed, const unsigned int* distance_table, const size_t max_distance_code_length, unsigned int value) {
-    int result = INFLATE_SUCCESS;
-
     value -= 257; // Translate value to length code.
 
     fill_buffer(bit_reader);
@@ -409,11 +393,12 @@ static int lz77(BitReader* bit_reader, Decompressed* decompressed, const unsigne
     if (distance > decompressed->length)
         return INFLATE_INVALID_LZ77;
     
+    int result = INFLATE_SUCCESS;
     result = expand_decompressed(decompressed, decompressed->length + length);
     if (result)
         return result;
 
-    /* Copy length bytes, byte by byte, so the destination of the bytes may overlap with the byte array that will be copied. */
+    /* Copy length bytes, byte by byte, so the destination may overlap with the byte array that will be copied. */
     for (unsigned char* byte = decompressed->bytes + decompressed->length; byte < decompressed->bytes + decompressed->length + length; ++byte)
         *byte = *(byte - distance);
     decompressed->length += length;
@@ -422,15 +407,13 @@ static int lz77(BitReader* bit_reader, Decompressed* decompressed, const unsigne
 }
 
 static int expand_decompressed(Decompressed* decompressed, const size_t new_length) {
-    int result = INFLATE_SUCCESS;
-
     while (new_length > decompressed->size) {
         decompressed->size *= 2;
         decompressed->bytes = realloc(decompressed->bytes, decompressed->size);
 
         if (!decompressed->bytes)
-            result = INFLATE_NO_MEMORY;
+            return INFLATE_NO_MEMORY;
     }
 
-    return result;
+    return INFLATE_SUCCESS;
 }
