@@ -1,1 +1,1 @@
-Implementations of inflate decompression.
+Implementation of inflate, zlib and gzip.
