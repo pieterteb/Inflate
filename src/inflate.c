@@ -166,7 +166,7 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
 
     /* Empty bit buffer. */
     bit_reader->bit_buffer = 0;
-    bit_reader->current_byte -= bit_reader->bit_buffer_count >> 3; // Go back number of bytes still in buffer (at most 3 at this point).
+    bit_reader->current_byte -= bit_reader->bit_buffer_count >> 3; // Go back number of bytes still in buffer (at most 4 at this point).
     bit_reader->bit_buffer_count = 0;
 
     /* If not enough bytes remain in bit reader, copy as many as possible. */
