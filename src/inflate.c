@@ -96,7 +96,7 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
 
     if (compressed && compressed_length) {
         /* Initialise decompression output. */
-        decompressed_local.size = compressed_length * sizeof(*decompressed_local.bytes) > 0 ? compressed_length * sizeof(*decompressed_local.bytes) : 1;
+        decompressed_local.size = compressed_length;
         decompressed_local.bytes = malloc(decompressed_local.size);
         if (!*decompressed_local.bytes)
             return INFLATE_NO_MEMORY;
@@ -120,12 +120,15 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
 
             switch (block_type) {
                 case 0: // Non-compressed block.
+                    printf("\nno compression triggered\n");
                     result = uncompressed_block(&bit_reader, &decompressed_local);
                     break;
                 case 1: // Fixed Huffman encoding.
+                    printf("\nstatic striggered\n");
                     result = fixed_huffman_block(&bit_reader, &decompressed_local);
                     break;
                 case 2: // Dynamic Huffman encoding.
+                    printf("\ndynamic triggered\n");
                     result = dynamic_huffman_block(&bit_reader, &decompressed_local);
                     break;
                 case 3: // Unused block type.
@@ -152,7 +155,7 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
 static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed) {
     int result = INFLATE_SUCCESS;
 
-    /* Go to nearest byte boundary and fill bit buffer. */
+    /* Go to nearest byte boundary and fill bit buffer. For the entirety of this function, bit_reader will be byte aligned. */
     next_byte(bit_reader);
     fill_buffer(bit_reader);
 
@@ -164,15 +167,21 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
     else if ((block_length & 0xFFFFU) != (~Nblock_length & 0xFFFFU))
         return INFLATE_BLOCK_LENGTH_UNCERTAIN;
 
-    /* Expand current output array if necessary. */
-    result = expand_decompressed(decompressed, decompressed->length + block_length);
+    unsigned int bytes_in_buffer = bit_reader->bit_buffer_count >> 3; 
+    /* Empty bit buffer. */
+    bit_reader->bit_buffer = 0;
+    bit_reader->current_byte -= bit_reader->bit_buffer_count >> 3; // Go back number of bytes still in buffer (at most 3 at this point).
+    bit_reader->bit_buffer_count = 0;
 
     /* If not enough bytes remain in bit reader, copy as many as possible. */
     if (bit_reader->current_byte + block_length >= bit_reader->compressed_end) {
         block_length = bit_reader->compressed_end - bit_reader->current_byte;
-
         result = INFLATE_COMPRESSED_INCOMPLETE;
     }
+
+    /* Expand current output array if necessary. */
+    result = expand_decompressed(decompressed, decompressed->length + block_length);
+
     memcpy(decompressed->bytes + decompressed->length, bit_reader->current_byte, block_length);
     bit_reader->current_byte += block_length;
     decompressed->length += block_length;
