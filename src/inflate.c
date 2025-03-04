@@ -120,15 +120,12 @@ extern int inflate(const unsigned char* compressed, const size_t compressed_leng
 
             switch (block_type) {
                 case 0: // Non-compressed block.
-                    printf("\nno compression triggered\n");
                     result = uncompressed_block(&bit_reader, &decompressed_local);
                     break;
                 case 1: // Fixed Huffman encoding.
-                    printf("\nstatic striggered\n");
                     result = fixed_huffman_block(&bit_reader, &decompressed_local);
                     break;
                 case 2: // Dynamic Huffman encoding.
-                    printf("\ndynamic triggered\n");
                     result = dynamic_huffman_block(&bit_reader, &decompressed_local);
                     break;
                 case 3: // Unused block type.
@@ -167,7 +164,6 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
     else if ((block_length & 0xFFFFU) != (~Nblock_length & 0xFFFFU))
         return INFLATE_BLOCK_LENGTH_UNCERTAIN;
 
-    unsigned int bytes_in_buffer = bit_reader->bit_buffer_count >> 3; 
     /* Empty bit buffer. */
     bit_reader->bit_buffer = 0;
     bit_reader->current_byte -= bit_reader->bit_buffer_count >> 3; // Go back number of bytes still in buffer (at most 3 at this point).

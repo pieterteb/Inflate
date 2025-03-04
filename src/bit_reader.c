@@ -82,6 +82,7 @@ unsigned int peek_bits(BitReader* bit_reader, size_t count) {
 }
 
 void next_byte(BitReader* bit_reader) {
+    /* We bitwise-AND with 7 for fast modulo 8. This works since we always add a multiple of 8 bits to the buffer. */
     bit_reader->bit_buffer >>= bit_reader->bit_buffer_count & 7;
     bit_reader->bit_buffer_count -= bit_reader->bit_buffer_count & 7;
 }
