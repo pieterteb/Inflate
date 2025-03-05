@@ -172,11 +172,17 @@ static int uncompressed_block(BitReader* bit_reader, Decompressed* decompressed)
     /* If not enough bytes remain in bit reader, copy as many as possible. */
     if (bit_reader->current_byte + block_length >= bit_reader->compressed_end) {
         block_length = bit_reader->compressed_end - bit_reader->current_byte;
+        /* Expand current output array if necessary. */
+        result = expand_decompressed(decompressed, decompressed->length + block_length);
+        if (result)
+            return result;
         result = INFLATE_COMPRESSED_INCOMPLETE;
+    } else {
+        /* Expand current output array if necessary. */
+        result = expand_decompressed(decompressed, decompressed->length + block_length);
+        if (result)
+            return result;
     }
-
-    /* Expand current output array if necessary. */
-    result = expand_decompressed(decompressed, decompressed->length + block_length);
 
     memcpy(decompressed->bytes + decompressed->length, bit_reader->current_byte, block_length);
     bit_reader->current_byte += block_length;
