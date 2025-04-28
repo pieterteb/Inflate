@@ -83,9 +83,8 @@ unsigned int get_value(BitReader* bit_reader, const unsigned int* table, const s
         if (bit == INFLATE_GENERAL_FAILURE) {
             code <<= max_code_length - i;
 
-            if (table[code] >> 16 > i) {
+            if (table[code] >> 16 > i)
                 return INFLATE_GENERAL_FAILURE;
-            }
 
             break;
         } else {

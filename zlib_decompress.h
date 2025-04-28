@@ -15,7 +15,7 @@ enum ZlibDecompressError {
 };
 
 
-extern int zlib_decompress(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length);
+extern int zlib_decompress(const unsigned char* compressed, size_t compressed_length, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length);
 
 
 

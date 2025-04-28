@@ -4,10 +4,10 @@
 
 
 
-extern int zlib_decompress(const unsigned char* compressed, size_t compressed_length, unsigned char** uncompressed, size_t* uncompressed_length) {
-    *uncompressed_length = 0;
+extern int zlib_decompress(const unsigned char* compressed, size_t compressed_length, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length) {
+    *decompressed_length = 0;
 
-    if (!uncompressed) {
+    if (!decompressed) {
         return ZLIB_DECOMPRESS_NO_OUTPUT;
     } else if (!compressed) {
         return ZLIB_DECOMPRESS_SUCCESS;
@@ -23,8 +23,8 @@ extern int zlib_decompress(const unsigned char* compressed, size_t compressed_le
 
     get_bits(&bit_reader, 16);
 
-    int result = inflate(bit_reader.current_byte, compressed_length - 6, uncompressed, uncompressed_length);
-    next_byte(&bit_reader);
+    int result = tinflate(bit_reader.current_byte, compressed_length - 6, decompressed, decompressed_length, decompressed_max_length);
+    byte_align(&bit_reader);
     get_bits(&bit_reader, 32);
 
     return result;
