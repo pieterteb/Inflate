@@ -1,18 +1,12 @@
-#include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "inflate.h"
-#include "inflate_internal.h"
 #include "bit_reader.h"
 #include "huffman.h"
+#include "inflate_internal.h"
 
 
-
-/* Process a deflate uncompressed block. */
-static int uncompressed_block(BitReader* bit_reader, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length);
-
-/*  Decompress a deflate block compressed with fixed Huffman encoding. */
-static int fixed_huffman_block(BitReader* bit_reader, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length);
 
 /* Decompress a deflate block compressed with dynamic Huffman encoding. */
 static int dynamic_huffman_block(BitReader* bit_reader, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length);
@@ -24,137 +18,225 @@ static int process_encoded_block_data(BitReader* bit_reader, const unsigned int*
 static int lz77(BitReader* bit_reader, const unsigned int* distance_table, const size_t max_distance_code_length, unsigned int value, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length);
 
 
-extern int tinflate(const unsigned char* compressed, size_t compressed_length, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length) {
+extern int tinflate(const uint8_t* compressed, const size_t compressed_length, uint8_t* decompressed, size_t* decompressed_length, size_t decompressed_max_length) {
     int result = INFLATE_SUCCESS;
 
     if (!decompressed)
         return INFLATE_NO_OUTPUT;
 
     if (compressed && compressed_length) {
-        BitReader bit_reader = {
-            .compressed = compressed,
-            .current_byte = compressed,
-            .compressed_end = compressed + compressed_length,
-            .bit_buffer = 0,
-            .bit_buffer_count = 0
-        };
-            
-        /* Process blocks. */
-        unsigned int final_block = 0;
-        unsigned int block_type = 0;
-        fill_buffer(&bit_reader);
-        do {
-            final_block = get_bits(&bit_reader, 1);
-            block_type = get_bits(&bit_reader, 2);
-            if (final_block == INFLATE_GENERAL_FAILURE || block_type == INFLATE_GENERAL_FAILURE)
-                return INFLATE_COMPRESSED_INCOMPLETE;
+        /* Initializing buffer. */
+        const uint8_t* compressed_next = compressed;
+        const uint8_t* compressed_end = compressed + compressed_length;
+        Buffer buffer = 0;
+        uint32_t buffer_count = 0;
 
+        uint8_t* decompressed_next = decompressed;
+        uint8_t* decompressed_end = decompressed + decompressed_max_length;
+
+        /* Initializing inflator struct. */
+        struct Inflator inflator = { 0 };
+
+        unsigned literal_code_count = 0;
+        unsigned distance_code_count = 0;
+
+        /* Process blocks. */
+        unsigned final_block = 0;   // BFINAL: 1 bit.
+        unsigned block_type = 0;    // BTYPE: 2 bits.
+        do {
+            FILL_BUFFER();
+            if (buffer_count < 1 + 2)
+                return INFLATE_COMPRESSED_INCOMPLETE;
+            final_block = buffer & BITMASK(1);
+            block_type = buffer >> 1 & BITMASK(2);
             switch (block_type) {
-                case 0: // Non-compressed block.
-                    result = uncompressed_block(&bit_reader, decompressed, decompressed_length, decompressed_max_length);
+                case INFLATE_BLOCKTYPE_UNCOMPRESSED:
+                    /* Align bit stream to next byte boundary. */
+                    buffer_count -= 3; // For BFINAL and BTYPE.
+                    compressed_next -= buffer_count >> 3;
+                    buffer = 0;
+                    buffer_count = 0;
+
+                    if (compressed_end - compressed_next < 4)
+                        return INFLATE_COMPRESSED_INCOMPLETE;
+
+                    /* Check block length integrity. */
+                    uint16_t block_length = *(uint16_t*)compressed_next;
+                    uint16_t Nblock_length = *(uint16_t*)(compressed_next + 2);
+                    compressed_next += 4;
+                    if (block_length != (uint16_t)~Nblock_length)
+                        return INFLATE_BLOCK_LENGTH_UNCERTAIN;
+
+                    if (block_length > compressed_end - compressed_next)
+                        return INFLATE_COMPRESSED_INCOMPLETE;
+                    if (block_length > decompressed_end - decompressed_next)
+                        return INFLATE_DECOMPRESSED_OVERFLOW;
+
+                    memcpy(decompressed_next, compressed_next, block_length);
+                    compressed_next += block_length;
+                    decompressed_next += block_length;
+
                     break;
-                case 1: // Fixed Huffman encoding.
-                    result = fixed_huffman_block(&bit_reader, decompressed, decompressed_length, decompressed_max_length);
+                case INFLATE_BLOCKTYPE_STATIC_HUFFMAN:
+                    CONSUME_BITS(3); // For BFINAL and BTYPE.
+
+                    if (!inflator.static_table_loaded) {
+                        inflator.static_table_loaded = true;
+                        
+                        /* Initialise literal code lengths as defined by the deflate standard (RFC 1951). */
+                        unsigned i = 0;
+                        for (; i < 144; ++i)
+                            inflator.u.s.code_lengths[i] = 8;
+                        for (; i < 256; ++i)
+                            inflator.u.s.code_lengths[i] = 9;
+                        for (; i < 280; ++i)
+                            inflator.u.s.code_lengths[i] = 7;
+                        for (; i < INFLATE_LITERAL_CODE_COUNT; ++i)
+                            inflator.u.s.code_lengths[i] = 8;
+                        
+                        /* Initialise distance code lengths as defined by the deflate standard (RFC 1951). */
+                        for (; i < INFLATE_LITERAL_CODE_COUNT + INFLATE_DISTANCE_CODE_COUNT; ++i)
+                            inflator.u.s.code_lengths[i] = 5;
+                        
+                        literal_code_count = INFLATE_LITERAL_CODE_COUNT;
+                        distance_code_count = INFLATE_DISTANCE_CODE_COUNT;
+                    }
+
                     break;
-                case 2: // Dynamic Huffman encoding.
-                    result = dynamic_huffman_block(&bit_reader, decompressed, decompressed_length, decompressed_max_length);
-                    break;
-                case 3: // Unused block type.
-                    result = INFLATE_INVALID_BLOCK_TYPE;
+                case INFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN:
+                    static const uint8_t code_length_code_length_order[INFLATE_CODE_LENGTH_CODE_COUNT] = {
+                        16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
+                    };
+
+                    if (buffer_count < 1 + 2 + 5 + 5 + 4 + 3)
+                        return INFLATE_COMPRESSED_INCOMPLETE;
+                    literal_code_count = 257 + (buffer >> 3 & BITMASK(5));
+                    distance_code_count = 1 + (buffer >> 8 & BITMASK(5));
+                    unsigned code_length_code_count = 4 + (buffer >> 13 & BITMASK(4));
+
+                    inflator.u.code_length_code_lengths[code_length_code_length_order[0]] = buffer >> 17 & BITMASK(3);
+                    CONSUME_BITS(20);
+                    FILL_BUFFER();
+                    if (buffer_count < 3 * (code_length_code_count - 1))
+                        return INFLATE_COMPRESSED_INCOMPLETE;
+                    
+                    /* Get code length code lengths and construct code length table. */
+                    unsigned i = 1;
+                    for (; i < code_length_code_count; ++i) {
+                        inflator.u.code_length_code_lengths[code_length_code_length_order[i]] = buffer & BITMASK(3);
+                        CONSUME_BITS(3);
+                    }
+                    for (; i < INFLATE_CODE_LENGTH_CODE_COUNT; ++i)
+                        inflator.u.code_length_code_lengths[code_length_code_length_order[i]] = 0;
+
+                    result = build_code_length_table(&inflator);
+                    if (result)
+                        return result;
+
+                    i = 0;
+                    do {
+                        if (buffer_count < INFLATE_MAX_CODE_LENGTH_CODE_LENGTH + 7)
+                            FILL_BUFFER();
+                        
+                        uint32_t entry = inflator.u.s.code_length_table[buffer & BITMASK(INFLATE_MAX_CODE_LENGTH_CODE_LENGTH)];
+                        buffer >>= (uint8_t)entry;
+                        buffer_count -= (uint8_t)entry;
+                        unsigned code = entry >> 16;
+
+                        unsigned repeat_value = 0;
+                        unsigned repeat_count = 0;
+                        if (code < 16) {
+                            inflator.u.s.code_lengths[i] = code;
+                            ++i;
+                        } else if (code == 16) {
+                            if (buffer_count < 2)
+                                return INFLATE_COMPRESSED_INCOMPLETE;
+                            if (!i)
+                                return INFLATE_INVALID_HUFFMAN_CODE;
+                            
+                            
+                            repeat_value = inflator.u.s.code_lengths[i - 1];
+                            repeat_count = 3 + (buffer & BITMASK(2));
+                            CONSUME_BITS(2);
+                            inflator.u.s.code_lengths[i] = repeat_value;
+                            inflator.u.s.code_lengths[i + 1] = repeat_value;
+                            inflator.u.s.code_lengths[i + 2] = repeat_value;
+                            inflator.u.s.code_lengths[i + 3] = repeat_value;
+                            inflator.u.s.code_lengths[i + 4] = repeat_value;
+                            inflator.u.s.code_lengths[i + 5] = repeat_value;
+                            i += repeat_count;
+                        } else if (code == 17) {
+                            if (buffer_count < 3)
+                                return INFLATE_COMPRESSED_INCOMPLETE;
+
+                            repeat_count = 3 + (buffer & BITMASK(3));
+                            CONSUME_BITS(3);
+                            inflator.u.s.code_lengths[i] = 0;
+                            inflator.u.s.code_lengths[i + 1] = 0;
+                            inflator.u.s.code_lengths[i + 2] = 0;
+                            inflator.u.s.code_lengths[i + 3] = 0;
+                            inflator.u.s.code_lengths[i + 4] = 0;
+                            inflator.u.s.code_lengths[i + 5] = 0;
+                            inflator.u.s.code_lengths[i + 6] = 0;
+                            inflator.u.s.code_lengths[i + 7] = 0;
+                            inflator.u.s.code_lengths[i + 8] = 0;
+                            i += repeat_count;
+                        } else {
+                            if (buffer_count < 7)
+                                return INFLATE_COMPRESSED_INCOMPLETE;
+
+                            repeat_count = 11 + (buffer & BITMASK(7));
+                            CONSUME_BITS(7);
+                            memset(&inflator.u.s.code_lengths[i], 0, repeat_count * sizeof(inflator.u.s.code_lengths[i]));
+                            i += repeat_count;
+                        }
+                    } while (i < literal_code_count + distance_code_count);
+
                     break;
                 default:
-                    break;
+                    return INFLATE_INVALID_BLOCK_TYPE;
             }
 
-            if (result)
-                break;
+            if (block_type == 1 || block_type == 2) {
+                result = build_literal_table(&inflator, literal_code_count);
+                if (result)
+                    return result;
+                result = build_distance_table(&inflator, literal_code_count, distance_code_count);
+                if (result)
+                    return result;
+
+                
+            }
         } while (!final_block);
     }
 
     return result;
 }
 
-static int uncompressed_block(BitReader* bit_reader, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length) {
-    /* Go to nearest byte boundary and fill bit buffer. For the entirety of this function, bit_reader will be byte aligned. */
-    byte_align(bit_reader);
-    fill_buffer(bit_reader);
 
-    /* Check whether block length and its one's complement match (LEN and NLEN in RFC 1951). */
-    uint16_t block_length = (uint16_t)get_bits(bit_reader, 16);
-    uint16_t Nblock_length = (uint16_t)get_bits(bit_reader, 16);
-    if (block_length == INFLATE_GENERAL_FAILURE || Nblock_length == INFLATE_GENERAL_FAILURE)
-        return INFLATE_COMPRESSED_INCOMPLETE;
-    else if (block_length != (~Nblock_length & 0xFFFFU))
-        return INFLATE_BLOCK_LENGTH_UNCERTAIN;
-
-    if (bit_reader->current_byte + block_length >= bit_reader->compressed_end)
-        return INFLATE_COMPRESSED_INCOMPLETE;
-    else if (*decompressed_length + block_length > decompressed_max_length)
-        return INFLATE_DECOMPRESSED_OVERFLOW;
-
-    memcpy(decompressed + *decompressed_length, bit_reader->current_byte, block_length);
-    bit_reader->current_byte += block_length;
-    *decompressed_length += block_length;
-
-    return INFLATE_SUCCESS;
-}
-
-static int fixed_huffman_block(BitReader* bit_reader, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length) {
-    /* Initialise literal code lengths as defined by the deflate standard (RFC 1951). */
-    size_t i = 0;
-    size_t literal_code_lengths[INFLATE_LITERAL_CODE_COUNT];
-    for (; i < 144; ++i)
-        literal_code_lengths[i] = 8;
-    for (; i < 256; ++i)
-        literal_code_lengths[i] = 9;
-    for (; i < 280; ++i)
-        literal_code_lengths[i] = 7;
-    for (; i < INFLATE_LITERAL_CODE_COUNT; ++i)
-        literal_code_lengths[i] = 8;
-
-    /* Initialise distance code lengths as defined by the deflate standard (RFC 1951). */
-    size_t distance_code_lengths[INFLATE_DISTANCE_CODE_COUNT];
-    for (i = 0; i < INFLATE_DISTANCE_CODE_COUNT; ++i)
-        distance_code_lengths[i] = 5;
-
-    /* Calculate Huffman tables. */
-    unsigned int* literal_table = huffman_table(literal_code_lengths, INFLATE_LITERAL_CODE_COUNT, NULL);
-    unsigned int* distance_table = huffman_table(distance_code_lengths, INFLATE_DISTANCE_CODE_COUNT, NULL);
-
-    /* Process block data. */
-    int result = process_encoded_block_data(bit_reader, literal_table, distance_table, 9, 5, decompressed, decompressed_length, decompressed_max_length);
-    
-    free(literal_table);
-    free(distance_table);
-
-    return result;
-}
-
-static unsigned int code_length_code_length_order[] = {
-    16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
-};
 
 static int dynamic_huffman_block(BitReader* bit_reader, unsigned char* decompressed, size_t* decompressed_length, size_t decompressed_max_length) {
     /* Read information defining this deflate block. (The obtained values correspond to HLIT, HDIST and HCLEN in RFC 1951.) */
     fill_buffer(bit_reader);
+    if (bit_reader->buffer_count < 5 + 5 + 4 + 3)
+        return INFLATE_COMPRESSED_INCOMPLETE;
     size_t literal_code_count = get_bits(bit_reader, 5);
     size_t distance_code_count = get_bits(bit_reader, 5);
     size_t code_length_code_count = get_bits(bit_reader, 4);
-    if (literal_code_count == INFLATE_GENERAL_FAILURE || distance_code_count == INFLATE_GENERAL_FAILURE || code_length_code_count == INFLATE_GENERAL_FAILURE)
-        return INFLATE_COMPRESSED_INCOMPLETE;
     literal_code_count += 257;
     distance_code_count += 1;
     code_length_code_count += 4;
 
     /* Initialise code length code lengths as defined by the deflate standard (RFC 1951). */
     size_t code_length_code_lengths[INFLATE_CODE_LENGTH_CODE_COUNT] = { 0 };
-    unsigned int code_length_value = 0;
-    for (size_t i = 0; i < code_length_code_count; ++i) {
+    unsigned int code_length_value = code_length_code_length_order[0];
+    code_length_code_lengths[code_length_value] = get_bits(bit_reader, 3);
+    fill_buffer(bit_reader);
+    if (bit_reader->buffer_count < 3 * (INFLATE_CODE_LENGTH_CODE_COUNT - 1))
+        return INFLATE_COMPRESSED_INCOMPLETE;
+    for (size_t i = 1; i < code_length_code_count; ++i) {
         code_length_value = code_length_code_length_order[i];
         code_length_code_lengths[code_length_value] = get_bits(bit_reader, 3);
-
-        if (code_length_code_lengths[code_length_value] == INFLATE_GENERAL_FAILURE)
-            return INFLATE_COMPRESSED_INCOMPLETE;
     }
     
     /* Calculate code length Huffman table. */
@@ -175,8 +257,6 @@ static int dynamic_huffman_block(BitReader* bit_reader, unsigned char* decompres
     while (i < code_lengths_count) {
         fill_buffer(bit_reader);
         value = get_value(bit_reader, code_length_table, max_code_length_code_length);
-        if (value == INFLATE_GENERAL_FAILURE)
-            return INFLATE_COMPRESSED_INCOMPLETE;
 
         if (value <= 15) {
             code_lengths[i] = value;
@@ -184,16 +264,22 @@ static int dynamic_huffman_block(BitReader* bit_reader, unsigned char* decompres
         } else {
             unsigned int repeat_length = 0;
             if (value == 16) {
-                repeat_length = get_bits(bit_reader, 2);
-                if (repeat_length == INFLATE_GENERAL_FAILURE)
+                if (bit_reader->buffer_count < 2) {
+                    free(code_length_table);
+                    free(code_lengths);
                     return INFLATE_COMPRESSED_INCOMPLETE;
-
-                repeat_length += 3;
+                }
+                repeat_length = get_bits(bit_reader, 2) + 3;
                 for (size_t j = 0; j < repeat_length; ++j) {
                     code_lengths[i] = code_lengths[i - 1];
                     ++i;
                 }
             } else if (value == 17) {
+                if (bit_reader->buffer_count < 3) {
+                    free(code_length_table);
+                    free(code_lengths);
+                    return INFLATE_COMPRESSED_INCOMPLETE;
+                }
                 repeat_length = get_bits(bit_reader, 3);
                 if (repeat_length == INFLATE_GENERAL_FAILURE)
                     return INFLATE_COMPRESSED_INCOMPLETE;
@@ -204,6 +290,11 @@ static int dynamic_huffman_block(BitReader* bit_reader, unsigned char* decompres
                     ++i;
                 }
             } else { // value == 18.
+                if (bit_reader->buffer_count < 7) {
+                    free(code_length_table);
+                    free(code_lengths);
+                    return INFLATE_COMPRESSED_INCOMPLETE;
+                }
                 repeat_length = get_bits(bit_reader, 7);
                 if (repeat_length == INFLATE_GENERAL_FAILURE)
                     return INFLATE_COMPRESSED_INCOMPLETE;

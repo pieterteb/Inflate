@@ -2,58 +2,47 @@
 #define BIT_READER_H
 
 
-#include <stddef.h>
 #include <stdint.h>
 
-#include "inflate.h"
 
+
+#define BITMASK(n)  ((1ULL << n) - 1)
 
 
 typedef uint64_t Buffer;
-typedef uint32_t Reader;
 
 
-typedef struct BitReader {
-    const unsigned char*    compressed;     // Pointer to compressed data.
-    const unsigned char*    current_byte;
-    const unsigned char*    compressed_end; // Pointer to first character after compressed.
+#define CHECK_ENOUGH_BITS_IN_BUFFER(count)                          \
+do {                                                                \
+    if (buffer_count < count)                                       \
+        return INFLATE_COMPRESSED_INCOMPLETE;                       \
+} while (0)
 
-    Buffer                  bit_buffer;
-    size_t                  bit_buffer_count;
-} BitReader;
+/* Fills bit buffer to 56-63 bits or less if not enough bytes are left. */
+#define FILL_BUFFER()                                               \
+do {                                                                \
+    if (compressed_end - compressed_next >= sizeof(Buffer)) {       \
+        buffer |= *(Buffer*)compressed_next << buffer_count;        \
+        compressed_next += (63 - buffer_count) >> 3;                \
+        buffer_count |= 56;                                         \
+    } else {                                                        \
+        while (buffer_count < 56) {                                 \
+            if (compressed_next == compressed_end)                  \
+                break;                                              \
+            buffer |= (Buffer)*compressed_next << buffer_count;     \
+            ++compressed_next;                                      \
+            buffer_count += 8;                                      \
+        }                                                           \
+    }                                                               \
+} while (0)
 
+#define CONSUME_BITS(count)                                         \
+do {                                                                \
+    buffer >>= count;                                               \
+    buffer_count -= count;                                          \
+} while (0)
 
-/**
- * @brief Adds 32 bits to buffer if possible.
- * 
- * @param bit_reader Contains compressed data.
- */
-void fill_buffer(BitReader* bit_reader);
-
-/**
- * @brief Read @a count bits from @a bit_reader and consume them if available. Else returns INFLATE_GENERAL_FAILURE.
- * 
- * @param bit_reader Contains compressed data.
- * @param count Number of bits. At most 16 bits can be requested in a single function call.
- * @return unsigned int
- */
-unsigned int get_bits(BitReader* bit_reader, size_t count);
-
-/**
- * @brief Read @a count bits from @a bit_reader without consuming the bits if available. Else returns INFLATE_GENERAL_FAILURE.
- * 
- * @param bit_reader Contains compressed data.
- * @param count Number of bits. At most 16 bits can be requested in a single function call.
- * @return unsigned int
- */
-unsigned int peek_bits(BitReader* bit_reader, size_t count);
-
-/**
- * @brief Move @a bit_reader to nearest byte boundary. If @a bit_reader is already on a byte boundary, does nothing.
- * 
- * @param bit_reader Contains compressed data.
- */
-void byte_align(BitReader* bit_reader);
+#define PEEK_BITS(count)    (buffer & BITMASK(count))
 
 
 
